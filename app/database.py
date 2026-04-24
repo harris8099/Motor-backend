@@ -1,6 +1,7 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 from pydantic_settings import BaseSettings
+from urllib.parse import urlparse, urlencode, parse_qs, urlunparse
 import re
 
 class Settings(BaseSettings):
@@ -12,19 +13,20 @@ class Settings(BaseSettings):
 settings = Settings()
 
 # Fix driver prefix
-if settings.database_url.startswith("postgres://"):
-    settings.database_url = settings.database_url.replace("postgres://", "postgresql+asyncpg://", 1)
-elif settings.database_url.startswith("postgresql://"):
-    settings.database_url = settings.database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+url = settings.database_url
+if url.startswith("postgres://"):
+    url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+elif url.startswith("postgresql://"):
+    url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
-# Strip ?sslmode=... — asyncpg rejects this parameter
-settings.database_url = re.sub(r'[?&]sslmode=[^&]*', '', settings.database_url)
-settings.database_url = re.sub(r'\?$', '', settings.database_url)  # remove trailing ?
+# Strip the ENTIRE query string — asyncpg doesn't accept any of these params
+# (sslmode, channel_binding, etc.) — SSL is handled via connect_args instead
+url = url.split("?")[0]
 
 engine = create_async_engine(
-    settings.database_url,
+    url,
     echo=False,
-    connect_args={"ssl": "require"}  # asyncpg's equivalent of sslmode=require
+    connect_args={"ssl": "require"}
 )
 
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
