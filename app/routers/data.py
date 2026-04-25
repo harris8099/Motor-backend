@@ -4,8 +4,8 @@ from sqlalchemy import text
 from app.database import get_db, settings
 from app.schemas import SensorPayload
 from app.services.prediction import run_predictions
-from app.services.ml_prediction import run_ml_predictions
-from app.services.advanced_ml_prediction import run_advanced_ml_predictions
+from app.services.ml_prediction import run_ml_predictions, ml_prediction_service
+from app.services.advanced_ml_prediction import run_advanced_ml_predictions, advanced_ml_prediction_service
 import json
 
 router = APIRouter()
@@ -146,3 +146,129 @@ async def get_readings(
     """), {"device_id": device_id, "limit": limit})
     rows = result.mappings().all()
     return {"data": [dict(r) for r in rows]}
+
+@router.post("/ai/analyze/{device_id}")
+async def analyze_with_gemini(
+    device_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(verify_api_key)
+):
+    """On-demand Gemini AI analysis - separate from automatic ML predictions"""
+    # Get latest sensor data for this device
+    result = await db.execute(text("""
+        SELECT * FROM sensor_readings
+        WHERE device_id = :device_id
+        ORDER BY ts DESC LIMIT 1
+    """), {"device_id": device_id})
+    row = result.mappings().first()
+    
+    if not row:
+        raise HTTPException(status_code=404, detail="No sensor data found for device")
+    
+    # Reconstruct payload from database row using the actual schema model names
+    from app.schemas import (
+        FaultsData,
+        MaintenanceData,
+        MotorData,
+        PowerData,
+        ProtectionData,
+        SensorPayload,
+        TemperatureData,
+        VibrationData,
+    )
+    
+    payload = SensorPayload(
+        deviceId=device_id,
+        motor=MotorData(
+            running=row['motor_running'],
+            rpm=row['rpm'],
+            pulse=row['pulse'],
+            uptime=row['uptime_seconds']
+        ),
+        power=PowerData(
+            voltage=row['voltage'],
+            current=row['current'],
+            power=row['power'],
+            powerFactor=row['power_factor'],
+            energy=row['energy'],
+            frequency=row['frequency']
+        ),
+        temperature=TemperatureData(
+            t1=row['temp1'],
+            t2=row['temp2']
+        ),
+        vibration=VibrationData(
+            x=row['accel_x'],
+            y=row['accel_y'],
+            z=row['accel_z'],
+            tap=row['tap_detected']
+        ),
+        faults=FaultsData(
+            overcurrent=row['fault_overcurrent'],
+            overtemp=row['fault_overtemp'],
+            stall=row['fault_stall'],
+            vibration=row['fault_vibration'],
+            overvoltage=row['fault_overvoltage'],
+            undervoltage=row['fault_undervoltage']
+        ),
+        protection=ProtectionData(
+            maxCurrentA=row['prot_max_current'],
+            maxTempC=row['prot_max_temp'],
+            minRpm=row['prot_min_rpm'],
+            overvoltageV=row['prot_overvoltage'],
+            undervoltageV=row['prot_undervoltage'],
+            stallCurrentA=row['prot_stall_current'],
+            startupGraceMs=row['prot_startup_grace'],
+            faultTripCount=row['prot_fault_trip_count'],
+            vibrationAckGraceMs=row['prot_vibration_ack_grace']
+        ),
+        maintenance=MaintenanceData(
+            nextMaintenanceTime=row['maint_next_time'],
+            totalLifeCycleHours=row['maint_total_hours'],
+            maintenanceHoursLimit=row['maint_hours_limit'],
+            totalLifeCycleSeconds=row['maint_total_seconds'],
+            maintenanceHoursLimitSeconds=row['maint_limit_seconds']
+        ),
+        uptime=row['uptime_seconds']
+    )
+    
+    # Call appropriate Gemini service based on prediction mode
+    prediction_mode = getattr(settings, 'prediction_mode', 'advanced')
+    
+    if prediction_mode == 'advanced':
+        gemini_result = await advanced_ml_prediction_service.get_gemini_analysis(payload, db)
+    else:
+        gemini_result = await ml_prediction_service.get_gemini_commentary(payload, db)
+    
+    if gemini_result:
+        # Store the AI analysis as a prediction
+        await db.execute(text("""
+            INSERT INTO predictions (device_id, prediction_type, confidence, severity, details)
+            VALUES (:device_id, :type, :confidence, :severity, :details)
+        """), {
+            "device_id": device_id,
+            "type": gemini_result["type"],
+            "confidence": gemini_result["confidence"],
+            "severity": gemini_result["severity"],
+            "details": json.dumps(gemini_result["details"])
+        })
+        await db.commit()
+        
+        return {
+            "success": True,
+            "analysis": gemini_result,
+            "message": "Gemini AI analysis completed and stored"
+        }
+    else:
+        gemini_error = getattr(advanced_ml_prediction_service, 'last_gemini_error', '') or ''
+        if 'RESOURCE_EXHAUSTED' in gemini_error or 'quota' in gemini_error.lower():
+            message = "Gemini request hit the current Google quota limit for this project. Try again later or use a project with available quota."
+        elif gemini_error:
+            message = f"Gemini AI analysis failed: {gemini_error}"
+        else:
+            message = "Gemini AI analysis failed or is not configured. Set GEMINI_API_KEY in the backend .env file."
+        return {
+            "success": False,
+            "analysis": None,
+            "message": message
+        }

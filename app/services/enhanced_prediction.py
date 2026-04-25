@@ -6,7 +6,7 @@ from typing import List, Dict, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from app.schemas import SensorPayload
-import google.generativeai as genai
+from google import genai
 from app.database import settings
 
 class EnhancedPredictionService:
@@ -14,8 +14,7 @@ class EnhancedPredictionService:
         # Initialize Gemini AI if API key is available
         self.gemini_enabled = hasattr(settings, 'gemini_api_key') and settings.gemini_api_key
         if self.gemini_enabled:
-            genai.configure(api_key=settings.gemini_api_key)
-            self.model = genai.GenerativeModel('gemini-pro')
+            self.client = genai.Client(api_key=settings.gemini_api_key)
     
     async def run_enhanced_predictions(self, payload: SensorPayload, db: AsyncSession) -> List[dict]:
         """Run enhanced predictions with historical analysis and AI insights"""
@@ -327,7 +326,10 @@ class EnhancedPredictionService:
             Respond in JSON format with these exact keys: health_assessment, key_concerns, recommended_actions, priority, maintenance_timeline
             """
             
-            response = self.model.generate_content(prompt)
+            response = self.client.models.generate_content(
+                model='gemini-2.0-flash',
+                contents=prompt
+            )
             ai_analysis = json.loads(response.text)
             
             return {

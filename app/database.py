@@ -7,6 +7,9 @@ import re
 class Settings(BaseSettings):
     database_url: str
     api_key: str
+    gemini_api_key: str = ""  # Google Gemini AI API key (optional)
+    gemini_mode: str = "commentary"  # Options: 'disabled', 'commentary', 'prediction'
+    prediction_mode: str = "advanced"  # Options: 'basic', 'ml', 'advanced'
     class Config:
         env_file = ".env"
 

@@ -6,6 +6,6 @@ pydantic
 pydantic-settings
 python-dotenv
 numpy
-google-generativeai
+google-genai
 scikit-learn
 scipy

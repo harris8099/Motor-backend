@@ -7,7 +7,7 @@ from typing import List, Dict, Optional, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from app.schemas import SensorPayload
-import google.generativeai as genai
+from google import genai
 from app.database import settings
 from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import StandardScaler
@@ -19,8 +19,7 @@ class MLPredictionService:
         # Initialize Gemini AI for commenting only
         self.gemini_enabled = hasattr(settings, 'gemini_api_key') and settings.gemini_api_key
         if self.gemini_enabled:
-            genai.configure(api_key=settings.gemini_api_key)
-            self.model = genai.GenerativeModel('gemini-pro')
+            self.client = genai.Client(api_key=settings.gemini_api_key)
         
         # Initialize ML models
         self.isolation_forest = IsolationForest(contamination=0.1, random_state=42)
@@ -72,13 +71,32 @@ class MLPredictionService:
         if maintenance_pred:
             results.append(maintenance_pred)
         
-        # 7. Gemini AI commenting on ML predictions
-        if self.gemini_enabled and len(results) > 0:
-            ai_comment = await self._get_gemini_comment(payload, historical_data, results)
-            if ai_comment:
-                results.append(ai_comment)
-        
+        # Note: Gemini AI commentary is now available on-demand via separate endpoint
+        # This keeps ML predictions fast while allowing optional AI analysis
         return results
+    
+    async def get_gemini_commentary(self, payload: SensorPayload, db: AsyncSession) -> Optional[dict]:
+        """Get on-demand Gemini AI commentary (called separately from automatic predictions)"""
+        if not self.gemini_enabled:
+            return None
+        
+        try:
+            # Get recent predictions for context
+            result = await db.execute(text("""
+                SELECT prediction_type, confidence, severity, details
+                FROM predictions
+                WHERE device_id = :device_id
+                ORDER BY ts DESC LIMIT 10
+            """), {"device_id": payload.deviceId})
+            recent_predictions = [dict(row) for row in result.mappings()]
+            
+            # Get historical data
+            historical_data = await self._get_historical_data(db, payload.deviceId, hours=48)
+            
+            return await self._get_gemini_comment(payload, historical_data, recent_predictions)
+        except Exception as e:
+            print(f"On-demand Gemini commentary failed: {e}")
+            return None
     
     async def _get_historical_data(self, db: AsyncSession, device_id: str, hours: int = 48) -> List[Dict]:
         """Get historical sensor data for ML training"""
@@ -513,7 +531,10 @@ class MLPredictionService:
             Keep it concise and professional. Do not make new predictions - only comment on the ML results.
             """
             
-            response = self.model.generate_content(prompt)
+            response = self.client.models.generate_content(
+                model='gemini-2.0-flash',
+                contents=prompt
+            )
             
             return {
                 "type": "ai_comment",

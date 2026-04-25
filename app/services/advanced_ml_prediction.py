@@ -7,7 +7,7 @@ from typing import List, Dict, Optional, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from app.schemas import SensorPayload
-import google.generativeai as genai
+from google import genai
 from app.database import settings
 from sklearn.ensemble import IsolationForest, RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
@@ -23,8 +23,8 @@ class AdvancedMLPredictionService:
         self.gemini_enabled = hasattr(settings, 'gemini_api_key') and settings.gemini_api_key
         self.gemini_mode = getattr(settings, 'gemini_mode', 'commentary')  # 'commentary', 'prediction', 'disabled'
         if self.gemini_enabled and self.gemini_mode != 'disabled':
-            genai.configure(api_key=settings.gemini_api_key)
-            self.model = genai.GenerativeModel('gemini-pro')
+            self.client = genai.Client(api_key=settings.gemini_api_key)
+        self.last_gemini_error: Optional[str] = None
         
         # Initialize ML Models
         self.isolation_forest = IsolationForest(contamination=0.1, random_state=42)
@@ -81,19 +81,56 @@ class AdvancedMLPredictionService:
         if rul_pred:
             results.append(rul_pred)
         
-        # 7. Gemini AI (Configurable Mode)
-        if self.gemini_enabled and self.gemini_mode != 'disabled':
-            if self.gemini_mode == 'prediction':
-                # Gemini makes predictions
-                gemini_pred = await self._get_gemini_predictions(payload, historical_data, results)
-            else:
-                # Gemini provides commentary (default)
-                gemini_pred = await self._get_gemini_commentary(payload, historical_data, results)
-            
-            if gemini_pred:
-                results.append(gemini_pred)
-        
+        # Note: Gemini AI is now available on-demand via /ai/analyze endpoint
+        # This allows ML models to run fast at intervals while AI analysis is optional
         return results
+    
+    async def get_gemini_analysis(self, payload: SensorPayload, db: AsyncSession) -> Optional[dict]:
+        """Get on-demand Gemini AI analysis (called separately from automatic predictions)"""
+        self.last_gemini_error = None
+        if not self.gemini_enabled:
+            self.last_gemini_error = "Gemini API key is not configured in the backend environment."
+            return None
+        
+        try:
+            # Get recent predictions and ML results for context
+            result = await db.execute(text("""
+                SELECT prediction_type, confidence, severity, details
+                FROM predictions
+                WHERE device_id = :device_id
+                ORDER BY ts DESC LIMIT 15
+            """), {"device_id": payload.deviceId})
+            recent_predictions = [dict(row) for row in result.mappings()]
+            
+            # Get historical data
+            historical_data = await self._get_historical_data(db, payload.deviceId, hours=72)
+            
+            # Get current ML predictions for this payload
+            features = self._prepare_features(historical_data)
+            current_features = self._extract_current_features(payload)
+            
+            ml_results = []
+            
+            # Run quick ML checks to provide context
+            anomaly = await self._detect_anomalies_advanced(features, current_features, historical_data)
+            if anomaly: ml_results.append(anomaly)
+            
+            bearing = await self._predict_bearing_failure_nasa(features, current_features, historical_data)
+            if bearing: ml_results.append(bearing)
+            
+            rul = await self._predict_remaining_useful_life(features, current_features, historical_data)
+            if rul: ml_results.append(rul)
+            
+            # Call Gemini based on mode
+            if self.gemini_mode == 'prediction':
+                return await self._get_gemini_predictions(payload, historical_data, ml_results)
+            else:
+                return await self._get_gemini_commentary(payload, historical_data, ml_results)
+                
+        except Exception as e:
+            self.last_gemini_error = str(e)
+            print(f"On-demand Gemini analysis failed: {e}")
+            return None
     
     async def _predict_bearing_failure_nasa(self, features: np.ndarray, current_features: np.ndarray, historical_data: List[Dict]) -> Optional[dict]:
         """NASA Bearing Failure Prediction Model"""
@@ -126,7 +163,8 @@ class AdvancedMLPredictionService:
             # 4. Frequency Domain Analysis (FFT)
             current_vibration = current_features[0, 6:9]
             fft_magnitudes = np.abs(np.fft.fft(current_vibration))
-            dominant_freq_idx = np.argmax(fft_magnitudes[1:len(fft_magnitudes)//2]) + 1
+            fft_window = fft_magnitudes[1:len(fft_magnitudes)//2]
+            dominant_freq_idx = int(np.argmax(fft_window) + 1) if len(fft_window) > 0 else 0
             
             # 5. NASA Bearing Health Index (BHI)
             # Based on NASA's research on bearing fault detection
@@ -134,7 +172,7 @@ class AdvancedMLPredictionService:
                 'rms_level': rms_total,
                 'crest_factor': np.mean([crest_factor_x, crest_factor_y, crest_factor_z]),
                 'kurtosis': np.mean([kurtosis_x, kurtosis_y, kurtosis_z]),
-                'frequency_content': np.mean(fft_magnitudes),
+                'frequency_content': float(np.mean(fft_magnitudes)) if len(fft_magnitudes) > 0 else 0.0,
                 'dominant_frequency': dominant_freq_idx
             }
             
@@ -143,7 +181,7 @@ class AdvancedMLPredictionService:
             normalized_indicators['rms_norm'] = min(rms_total / 20.0, 1.0)  # Normalize against 20 units
             normalized_indicators['crest_norm'] = min((np.mean([crest_factor_x, crest_factor_y, crest_factor_z]) - 3.0) / 5.0, 1.0)
             normalized_indicators['kurtosis_norm'] = min(max((np.mean([kurtosis_x, kurtosis_y, kurtosis_z]) - 3.0) / 10.0, 0), 1.0)
-            normalized_indicators['freq_norm'] = min(np.mean(fft_magnitudes) / 100.0, 1.0)
+            normalized_indicators['freq_norm'] = min((float(np.mean(fft_magnitudes)) if len(fft_magnitudes) > 0 else 0.0) / 100.0, 1.0)
             
             # Calculate NASA Bearing Health Index
             bhi = np.mean(list(normalized_indicators.values()))
@@ -651,11 +689,14 @@ class AdvancedMLPredictionService:
             Respond in JSON format with these exact keys: failure_probability_24h, likely_failure_mode, maintenance_actions, critical_parameters, estimated_rul_days
             """
             
-            response = self.model.generate_content(prompt)
+            response = self.client.models.generate_content(
+                model='gemini-2.0-flash',
+                contents=prompt
+            )
             ai_predictions = json.loads(response.text)
             
             return {
-                "type": "gemini_ai_predictions",
+                "type": "ai_analysis",
                 "confidence": 0.85,
                 "severity": ai_predictions.get('failure_probability_24h', 0) > 0.5 and "high" or "medium",
                 "details": {
@@ -667,6 +708,7 @@ class AdvancedMLPredictionService:
             }
             
         except Exception as e:
+            self.last_gemini_error = str(e)
             print(f"Gemini AI prediction failed: {e}")
             return None
     
@@ -709,10 +751,13 @@ class AdvancedMLPredictionService:
             Keep it concise and professional. Do not make new predictions - only comment on the ML results.
             """
             
-            response = self.model.generate_content(prompt)
+            response = self.client.models.generate_content(
+                model='gemini-2.0-flash',
+                contents=prompt
+            )
             
             return {
-                "type": "gemini_ai_commentary",
+                "type": "ai_comment",
                 "confidence": 0.95,
                 "severity": "low",
                 "details": {
@@ -724,6 +769,7 @@ class AdvancedMLPredictionService:
             }
             
         except Exception as e:
+            self.last_gemini_error = str(e)
             print(f"Gemini commentary failed: {e}")
             return None
     
