@@ -15,6 +15,7 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [lastUpdated, setLastUpdated] = useState(null);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   useEffect(() => {
     async function loadAllData() {
@@ -45,7 +46,7 @@ function App() {
     }
 
     return undefined;
-  }, [deviceId]);
+  }, [deviceId, refreshTrigger]);
 
   const latest = data.length > 0 ? data[0] : null;
   const averageTemp = latest ? ((latest.temp1 + latest.temp2) / 2).toFixed(1) : '0.0';
@@ -74,7 +75,7 @@ function App() {
                 onChange={(e) => setDeviceId(e.target.value)}
                 placeholder="Enter Device ID"
               />
-              <button className="refresh-button" type="button" onClick={() => setLastUpdated(new Date(0))}>
+              <button className="refresh-button" type="button" onClick={() => setRefreshTrigger(prev => prev + 1)}>
                 <RefreshCw size={14} />
                 Refresh
               </button>
