@@ -46,29 +46,43 @@ function AIPage() {
       id: 'overheating',
       name: 'Overheating Prediction',
       icon: TrendingUp,
-      description: 'Analyzes temperature trends to predict thermal runaway before it occurs',
-      status: 'Active Monitoring'
+      description: 'Analyzes temperature trends with historical data to predict thermal runaway',
+      status: 'Enhanced with Trend Analysis'
     },
     {
       id: 'stall',
       name: 'Stall Risk Detection',
       icon: AlertTriangle,
-      description: 'Monitors current and RPM to detect stall conditions early',
-      status: 'Active Monitoring'
+      description: 'Advanced monitoring of current, RPM, and power for early stall detection',
+      status: 'Enhanced with Power Analysis'
     },
     {
       id: 'bearing',
       name: 'Bearing Fault Detection',
       icon: Wind,
-      description: 'Uses vibration analysis to identify bearing degradation patterns',
-      status: 'Active Monitoring'
+      description: 'Statistical vibration analysis with anomaly detection and trend monitoring',
+      status: 'Enhanced with Z-Score Analysis'
+    },
+    {
+      id: 'efficiency',
+      name: 'Power Efficiency Analysis',
+      icon: Activity,
+      description: 'Monitors motor efficiency and detects performance degradation',
+      status: 'New Feature'
     },
     {
       id: 'maintenance',
-      name: 'Maintenance Forecasting',
+      name: 'Predictive Maintenance',
       icon: Wrench,
-      description: 'Predicts optimal maintenance windows based on usage patterns',
-      status: 'Active Monitoring'
+      description: 'Usage pattern analysis and stress-based maintenance scheduling',
+      status: 'Enhanced with Stress Factors'
+    },
+    {
+      id: 'gemini',
+      name: 'AI Comprehensive Analysis',
+      icon: Brain,
+      description: 'Gemini AI provides expert-level motor health assessment and recommendations',
+      status: 'Powered by Google AI'
     }
   ];
 
