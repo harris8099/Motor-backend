@@ -1,23 +1,27 @@
 import React from 'react';
 
+function formatPredictionName(value) {
+  return value.replace(/_/g, ' ');
+}
+
+function formatDetails(details) {
+  return JSON.stringify(details).replace(/["{}]/g, ' ').trim();
+}
+
 export default function PredictionsBadge({ predictions }) {
   if (!predictions || predictions.length === 0) {
-    return <div style={{ color: 'var(--text-muted)' }}>No active AI alerts.</div>;
+    return <div className="empty-copy">No active AI alerts.</div>;
   }
 
   return (
     <div>
-      {predictions.map(pred => (
+      {predictions.map((pred) => (
         <div key={pred.id} className={`prediction-badge severity-${pred.severity}`}>
           <div className="prediction-header">
-            <span className="prediction-type">{pred.prediction_type.replace('_', ' ')}</span>
-            <span className="prediction-conf">{(pred.confidence * 100).toFixed(0)}% Conf</span>
+            <span className="prediction-type">{formatPredictionName(pred.prediction_type)}</span>
+            <span className="prediction-conf">{(pred.confidence * 100).toFixed(0)}% conf</span>
           </div>
-          {pred.details && (
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-              {JSON.stringify(pred.details).replace(/["{}]/g, ' ')}
-            </div>
-          )}
+          {pred.details && <div className="prediction-details">{formatDetails(pred.details)}</div>}
         </div>
       ))}
     </div>
