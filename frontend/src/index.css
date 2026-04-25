@@ -1,13 +1,15 @@
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Nunito+Sans:wght@400;600;700&display=swap');
 
 :root {
-  --ink-main: #203146;
-  --ink-muted: #5e7088;
-  --accent-1: #ef7c2e;
-  --accent-2: #2e84d7;
-  --panel-bg: rgba(255, 255, 255, 0.74);
-  --panel-border: rgba(50, 88, 132, 0.2);
-  --soft-shadow: 0 10px 28px rgba(38, 53, 73, 0.1);
+  --ink-main: #e8ecf1;
+  --ink-muted: #8b95a5;
+  --accent-1: #ff9f43;
+  --accent-2: #54a0ff;
+  --panel-bg: rgba(30, 35, 45, 0.85);
+  --panel-border: rgba(255, 255, 255, 0.1);
+  --soft-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
+  --bg-dark: #0d1117;
+  --bg-darker: #080b10;
 }
 
 * {
@@ -26,9 +28,9 @@ body {
   font-family: 'Space Grotesk', sans-serif;
   color: var(--ink-main);
   background:
-    radial-gradient(circle at 8% 12%, rgba(255, 193, 132, 0.36), transparent 32%),
-    radial-gradient(circle at 90% 22%, rgba(136, 197, 255, 0.42), transparent 35%),
-    linear-gradient(180deg, #f9f6f2 0%, #f0f6fc 55%, #ecf4fc 100%);
+    radial-gradient(circle at 8% 12%, rgba(255, 159, 67, 0.15), transparent 32%),
+    radial-gradient(circle at 90% 22%, rgba(84, 160, 255, 0.12), transparent 35%),
+    linear-gradient(180deg, var(--bg-darker) 0%, #12171f 55%, var(--bg-dark) 100%);
 }
 
 .app-shell {
@@ -41,10 +43,10 @@ body {
   inset: 0;
   pointer-events: none;
   background-image:
-    linear-gradient(rgba(46, 132, 215, 0.065) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(46, 132, 215, 0.065) 1px, transparent 1px);
+    linear-gradient(rgba(84, 160, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(84, 160, 255, 0.04) 1px, transparent 1px);
   background-size: 38px 38px;
-  opacity: 0.26;
+  opacity: 0.5;
 }
 
 .animate-fade-in {
