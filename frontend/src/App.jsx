@@ -3,7 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import Home from './pages/Home';
 import DeviceLayout from './pages/DeviceLayout';
 import Overview from './pages/Overview';
-import AIPage from './pages/AIPage';
+import AIPage from './pages/AIPageTest';
 import PowerPage from './pages/PowerPage';
 import TemperaturePage from './pages/TemperaturePage';
 import VibrationPage from './pages/VibrationPage';

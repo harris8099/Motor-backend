@@ -1,7 +1,20 @@
 /* Common Page Styles */
 
+:root {
+  --panel-bg: rgba(30, 41, 59, 0.6);
+  --panel-border: rgba(148, 163, 184, 0.1);
+  --panel-border-hover: rgba(56, 189, 248, 0.3);
+  --soft-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --accent-1: #38bdf8;
+  --accent-2: #8b5cf6;
+}
+
 .page-container {
   max-width: 1200px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 0 1rem 2rem 1rem;
+  min-height: 100vh;
 }
 
 .page-header {
