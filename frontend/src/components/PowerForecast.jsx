@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { TrendingUp, DollarSign, Zap, Calendar, Settings } from 'lucide-react';
+import { TrendingUp, IndianRupee, Zap, Calendar, Settings } from 'lucide-react';
 
 export default function PowerForecast({ forecastData, electricityRate, onRateChange }) {
-  const [localRate, setLocalRate] = useState(electricityRate || 0.12);
+  const [localRate, setLocalRate] = useState(electricityRate || 8.0);
   const [showSettings, setShowSettings] = useState(false);
 
   useEffect(() => {
@@ -12,7 +12,7 @@ export default function PowerForecast({ forecastData, electricityRate, onRateCha
   }, [electricityRate]);
 
   const handleRateChange = (e) => {
-    const newRate = parseFloat(e.target.value) || 0.12;
+    const newRate = parseFloat(e.target.value) || 8.0;
     setLocalRate(newRate);
     if (onRateChange) {
       onRateChange(newRate);
@@ -25,6 +25,7 @@ export default function PowerForecast({ forecastData, electricityRate, onRateCha
         <div className="forecast-header">
           <TrendingUp size={20} />
           <h3>Power & Cost Forecast</h3>
+          <Settings size={16} className="settings-icon" />
         </div>
         <div className="forecast-empty">No forecast data available</div>
       </div>
@@ -47,16 +48,16 @@ export default function PowerForecast({ forecastData, electricityRate, onRateCha
       {showSettings && (
         <div className="rate-settings">
           <label>
-            <DollarSign size={14} />
-            Electricity Rate ($/kWh)
+            <IndianRupee size={14} />
+            Electricity Rate (₹/kWh)
           </label>
           <input
             type="number"
-            step="0.01"
+            step="0.1"
             min="0"
             value={localRate}
             onChange={handleRateChange}
-            placeholder="0.12"
+            placeholder="8.0"
           />
         </div>
       )}
@@ -80,17 +81,17 @@ export default function PowerForecast({ forecastData, electricityRate, onRateCha
           <div className="cost-card">
             <Calendar size={16} />
             <span className="cost-period">Hourly</span>
-            <span className="cost-value">${summary.projected_hourly_cost?.toFixed(4) || 0}</span>
+            <span className="cost-value">₹{summary.projected_hourly_cost?.toFixed(2) || 0}</span>
           </div>
           <div className="cost-card">
             <Calendar size={16} />
             <span className="cost-period">Daily</span>
-            <span className="cost-value">${summary.projected_daily_cost?.toFixed(2) || 0}</span>
+            <span className="cost-value">₹{summary.projected_daily_cost?.toFixed(0) || 0}</span>
           </div>
           <div className="cost-card highlight">
             <Calendar size={16} />
             <span className="cost-period">Monthly</span>
-            <span className="cost-value">${summary.projected_monthly_cost?.toFixed(2) || 0}</span>
+            <span className="cost-value">₹{summary.projected_monthly_cost?.toFixed(0) || 0}</span>
           </div>
         </div>
       </div>
@@ -126,8 +127,8 @@ export default function PowerForecast({ forecastData, electricityRate, onRateCha
       )}
 
       <div className="rate-info">
-        <DollarSign size={14} />
-        <span>Rate: ${localRate.toFixed(2)}/kWh</span>
+        <IndianRupee size={14} />
+        <span>Rate: ₹{localRate.toFixed(1)}/kWh</span>
       </div>
     </div>
   );

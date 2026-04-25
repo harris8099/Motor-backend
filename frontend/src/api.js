@@ -29,3 +29,49 @@ export async function fetchPowerForecast(deviceId, electricityRate = 0.12, hours
   if (!res.ok) throw new Error('Failed to fetch forecast');
   return res.json();
 }
+
+// Devices API
+export async function fetchDevices() {
+  const res = await fetch(`${API_BASE_URL}/devices`, { headers });
+  if (!res.ok) throw new Error('Failed to fetch devices');
+  return res.json();
+}
+
+export async function createDevice(device) {
+  const res = await fetch(`${API_BASE_URL}/devices`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(device),
+  });
+  if (!res.ok) throw new Error('Failed to create device');
+  return res.json();
+}
+
+export async function createDevicesBulk(devices) {
+  const res = await fetch(`${API_BASE_URL}/devices/bulk`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(devices),
+  });
+  if (!res.ok) throw new Error('Failed to create devices');
+  return res.json();
+}
+
+export async function updateDevice(deviceId, updates) {
+  const res = await fetch(`${API_BASE_URL}/devices/${deviceId}`, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify(updates),
+  });
+  if (!res.ok) throw new Error('Failed to update device');
+  return res.json();
+}
+
+export async function deleteDevice(deviceId) {
+  const res = await fetch(`${API_BASE_URL}/devices/${deviceId}`, {
+    method: 'DELETE',
+    headers,
+  });
+  if (!res.ok) throw new Error('Failed to delete device');
+  return res.json();
+}

@@ -1,0 +1,46 @@
+.gauge-meter {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.gauge-svg {
+  transform: rotate(0deg);
+}
+
+.gauge-progress {
+  transition: stroke-dashoffset 0.5s ease, stroke 0.3s ease;
+}
+
+.gauge-content {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.gauge-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #f8fafc;
+  line-height: 1;
+}
+
+.gauge-unit {
+  font-size: 0.7rem;
+  color: #94a3b8;
+  margin-top: 0.1rem;
+}
+
+.gauge-label {
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  color: #94a3b8;
+  text-align: center;
+}

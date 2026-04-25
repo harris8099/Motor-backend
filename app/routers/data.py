@@ -86,6 +86,16 @@ async def receive_data(
         "m_ls": payload.maintenance.maintenanceHoursLimitSeconds,
     })
 
+    # Update device heartbeat (last_seen_at)
+    await db.execute(text("""
+        INSERT INTO devices (id, name, last_seen_at, updated_at, is_active)
+        VALUES (:device_id, :device_id, NOW(), NOW(), TRUE)
+        ON CONFLICT (id) DO UPDATE SET
+            last_seen_at = NOW(),
+            updated_at = NOW(),
+            is_active = TRUE
+    """), {"device_id": payload.deviceId})
+
     # Log active faults
     active = [k for k, v in payload.faults.model_dump().items() if v]
     for fault in active:

@@ -1,3 +1,16 @@
+-- Registered devices table
+CREATE TABLE devices (
+    id              TEXT PRIMARY KEY,
+    name            TEXT,
+    description     TEXT,
+    is_active       BOOLEAN DEFAULT TRUE,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_seen_at    TIMESTAMPTZ,
+    location        TEXT,
+    firmware_version TEXT
+);
+
 -- Stores every ESP32 reading
 CREATE TABLE sensor_readings (
     id          BIGSERIAL PRIMARY KEY,
@@ -78,6 +91,7 @@ CREATE TABLE predictions (
 );
 
 -- Indexes for fast queries
+CREATE INDEX idx_devices_active ON devices(is_active);
 CREATE INDEX idx_readings_device_ts ON sensor_readings(device_id, ts DESC);
 CREATE INDEX idx_faults_device_ts   ON fault_events(device_id, ts DESC);
 CREATE INDEX idx_predictions_device ON predictions(device_id, ts DESC);

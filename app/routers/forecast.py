@@ -40,7 +40,7 @@ def linear_regression_forecast(values: List[float], steps: int = 12) -> List[flo
 @router.get("/forecast/{device_id}")
 async def get_power_forecast(
     device_id: str,
-    electricity_rate: float = 0.12,
+    electricity_rate: float = 8.0,
     hours: int = 24,
     db: AsyncSession = Depends(get_db),
     _: None = Depends(verify_api_key)

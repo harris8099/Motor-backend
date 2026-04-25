@@ -1,0 +1,43 @@
+.skeleton-card {
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  border-radius: 12px;
+  padding: 1.25rem;
+}
+
+.skeleton-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.skeleton-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: rgba(148, 163, 184, 0.2);
+}
+
+.skeleton-title {
+  height: 16px;
+  width: 80px;
+  border-radius: 4px;
+  background: rgba(148, 163, 184, 0.2);
+}
+
+.skeleton-value {
+  height: 32px;
+  width: 100px;
+  border-radius: 4px;
+  background: rgba(148, 163, 184, 0.15);
+  margin-bottom: 0.5rem;
+}
+
+.skeleton-unit {
+  height: 14px;
+  width: 40px;
+  border-radius: 4px;
+  background: rgba(148, 163, 184, 0.1);
+}
+

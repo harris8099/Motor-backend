@@ -1,0 +1,197 @@
+.terminal-container {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 4rem); /* Fill viewport minus padding */
+}
+
+.terminal-controls {
+  display: flex;
+  gap: 0.8rem;
+}
+
+.control-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  color: var(--ink-muted);
+  padding: 0.5rem 0.8rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.control-btn:hover {
+  border-color: var(--accent-1);
+  color: var(--accent-1);
+}
+
+.control-btn.active {
+  background: rgba(0, 240, 255, 0.1);
+  border-color: var(--accent-1);
+  color: var(--accent-1);
+}
+
+.control-btn.primary {
+  background: linear-gradient(135deg, var(--accent-1) 0%, var(--accent-2) 100%);
+  color: #000;
+  border: none;
+}
+.control-btn.primary:hover {
+  opacity: 0.9;
+}
+
+.terminal-window {
+  flex: 1;
+  background: rgba(5, 5, 5, 0.95);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  margin-top: 1rem;
+}
+
+.terminal-header-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.6rem 1rem;
+  background: #111;
+  border-bottom: 1px solid #222;
+}
+
+.window-dots {
+  display: flex;
+  gap: 6px;
+}
+
+.dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+.dot.red { background: #ff5f56; }
+.dot.yellow { background: #ffbd2e; }
+.dot.green { background: #27c93f; }
+
+.window-title {
+  color: #888;
+  font-family: monospace;
+  font-size: 0.85rem;
+}
+
+.window-status {
+  min-width: 100px;
+  text-align: right;
+}
+
+.status-indicator {
+  font-family: monospace;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.status-indicator.blinking {
+  color: #00f0ff;
+  animation: terminalBlink 1.5s infinite;
+}
+
+.status-indicator.paused {
+  color: #94a3b8;
+}
+
+@keyframes terminalBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.terminal-output {
+  flex: 1;
+  padding: 1rem;
+  overflow-y: auto;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  scroll-behavior: smooth;
+}
+
+.terminal-empty {
+  color: #444;
+  padding: 2rem 0;
+}
+
+.cursor-blink::after {
+  content: '█';
+  animation: cursorBlink 1s infinite;
+  color: #00f0ff;
+  margin-left: 5px;
+}
+
+@keyframes cursorBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.log-entry {
+  margin-bottom: 1.5rem;
+  border-left: 2px solid #222;
+  padding-left: 1rem;
+  transition: all 0.3s;
+}
+
+.log-entry:hover {
+  border-left-color: var(--accent-1);
+}
+
+.log-meta {
+  display: flex;
+  gap: 0.8rem;
+  margin-bottom: 0.4rem;
+  font-size: 0.85rem;
+}
+
+.log-timestamp {
+  color: #666;
+}
+
+.log-source {
+  color: #b026ff;
+  font-weight: bold;
+}
+
+.log-code {
+  color: #00f0ff;
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* Custom Scrollbar for Terminal */
+.terminal-output::-webkit-scrollbar {
+  width: 10px;
+}
+
+.terminal-output::-webkit-scrollbar-track {
+  background: #0a0a0a;
+}
+
+.terminal-output::-webkit-scrollbar-thumb {
+  background: #222;
+  border-radius: 5px;
+}
+
+.terminal-output::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-1);
+}
+
+@media (max-width: 620px) {
+  .terminal-controls {
+    display: none; /* Hide complex controls on very small screens, or put them in a menu */
+  }
+}
