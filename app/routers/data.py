@@ -4,7 +4,7 @@ from sqlalchemy import text
 from app.database import get_db, settings
 from app.schemas import SensorPayload
 from app.services.prediction import run_predictions
-from app.services.enhanced_prediction import run_enhanced_predictions
+from app.services.ml_prediction import run_ml_predictions
 import json
 
 router = APIRouter()
@@ -105,8 +105,8 @@ async def receive_data(
             VALUES (:device_id, :fault_type)
         """), {"device_id": payload.deviceId, "fault_type": fault})
 
-    # Run enhanced predictions with AI analysis
-    predictions = await run_enhanced_predictions(payload, db)
+    # Run ML-based predictions with AI commenting
+    predictions = await run_ml_predictions(payload, db)
     for p in predictions:
         await db.execute(text("""
             INSERT INTO predictions (device_id, prediction_type, confidence, severity, details)

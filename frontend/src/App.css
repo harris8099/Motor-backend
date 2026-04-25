@@ -13,8 +13,29 @@
   margin-bottom: 1rem;
 }
 
+.ai-comment-badge {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(34, 197, 94, 0.15) 100%);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  margin-top: 1rem;
+}
+
 .ai-analysis {
   line-height: 1.6;
+}
+
+.ai-comment {
+  line-height: 1.6;
+}
+
+.ai-comment .comment-text {
+  color: #10b981;
+  font-style: italic;
+  margin-bottom: 0.5rem;
+}
+
+.ai-comment .comment-meta {
+  color: #6b7280;
+  font-size: 0.85rem;
 }
 
 .ai-health {
@@ -39,6 +60,11 @@
 
 .prediction-badge.ai-analysis-badge .prediction-type {
   color: #8b5cf6;
+  font-weight: 600;
+}
+
+.prediction-badge.ai-comment-badge .prediction-type {
+  color: #10b981;
   font-weight: 600;
 }
 

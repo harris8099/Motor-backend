@@ -15,8 +15,22 @@ function formatDetails(details) {
   }
   
   if (typeof details === 'object') {
+    if (details.comment) {
+      // AI Comment from Gemini - display as expert commentary
+      return (
+        <div className="ai-comment">
+          <div className="comment-text">
+            {details.comment}
+          </div>
+          <div className="comment-meta">
+            <small>💭 Expert Analysis • Based on {details.ml_predictions_count} ML predictions</small>
+          </div>
+        </div>
+      );
+    }
+    
     if (details.health_assessment) {
-      // AI Analysis from Gemini
+      // Legacy AI Analysis (backward compatibility)
       return (
         <div className="ai-analysis">
           <div className="ai-health">
@@ -41,11 +55,30 @@ function formatDetails(details) {
       );
     }
     
-    return Object.entries(details).map(([key, value]) => (
-      <div key={key}>
-        <strong>{key.replace(/_/g, ' ')}:</strong> {typeof value === 'number' ? value.toFixed(2) : value}
-      </div>
-    ));
+    // ML Prediction details
+    return Object.entries(details).map(([key, value]) => {
+      // Skip certain internal fields
+      if (['analysis_type', 'ml_predictions_count'].includes(key)) return null;
+      
+      let displayValue = value;
+      if (typeof value === 'number') {
+        if (key.includes('rate') || key.includes('ratio')) {
+          displayValue = (value * 100).toFixed(1) + '%';
+        } else if (key.includes('time') && key.includes('minutes')) {
+          displayValue = Math.round(value) + ' min';
+        } else if (key.includes('temp') || key.includes('power') || key.includes('current') || key.includes('vibration')) {
+          displayValue = value.toFixed(2);
+        } else {
+          displayValue = value.toFixed(3);
+        }
+      }
+      
+      return (
+        <div key={key}>
+          <strong>{key.replace(/_/g, ' ')}:</strong> {displayValue}
+        </div>
+      );
+    }).filter(Boolean);
   }
   
   return JSON.stringify(details).replace(/["{}]/g, ' ').trim();
@@ -56,20 +89,22 @@ export default function PredictionsBadge({ predictions }) {
     return <div className="empty-copy">No active AI alerts.</div>;
   }
 
-  // Sort predictions: AI analysis first, then by confidence
+  // Sort predictions: AI comment last, ML predictions by confidence
   const sortedPredictions = [...predictions].sort((a, b) => {
-    if (a.prediction_type === 'ai_analysis') return -1;
-    if (b.prediction_type === 'ai_analysis') return 1;
-    return (b.confidence || 0) - (a.confidence || 0);
+    if (a.prediction_type === 'ai_comment') return 1;  // AI comments last
+    if (b.prediction_type === 'ai_comment') return -1;
+    return (b.confidence || 0) - (a.confidence || 0);  // ML predictions by confidence
   });
 
   return (
     <div>
       {sortedPredictions.map((pred) => (
-        <div key={pred.id} className={`prediction-badge severity-${pred.severity} ${pred.prediction_type === 'ai_analysis' ? 'ai-analysis-badge' : ''}`}>
+        <div key={pred.id} className={`prediction-badge severity-${pred.severity} ${pred.prediction_type === 'ai_comment' ? 'ai-comment-badge' : pred.prediction_type === 'ai_analysis' ? 'ai-analysis-badge' : ''}`}>
           <div className="prediction-header">
             <span className="prediction-type">
-              {pred.prediction_type === 'ai_analysis' ? '🤖 AI Analysis' : formatPredictionName(pred.prediction_type)}
+              {pred.prediction_type === 'ai_comment' ? '💭 AI Expert Commentary' : 
+               pred.prediction_type === 'ai_analysis' ? '🤖 AI Analysis' : 
+               formatPredictionName(pred.prediction_type)}
             </span>
             <span className="prediction-conf">{(pred.confidence * 100).toFixed(0)}% conf</span>
           </div>

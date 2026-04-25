@@ -43,46 +43,53 @@ function AIPage() {
 
   const aiModels = [
     {
+      id: 'anomaly',
+      name: 'Anomaly Detection',
+      icon: TrendingUp,
+      description: 'Isolation Forest ML algorithm detects unusual patterns in sensor data',
+      status: 'ML-Based (Isolation Forest)'
+    },
+    {
       id: 'overheating',
       name: 'Overheating Prediction',
       icon: TrendingUp,
-      description: 'Analyzes temperature trends with historical data to predict thermal runaway',
-      status: 'Enhanced with Trend Analysis'
-    },
-    {
-      id: 'stall',
-      name: 'Stall Risk Detection',
-      icon: AlertTriangle,
-      description: 'Advanced monitoring of current, RPM, and power for early stall detection',
-      status: 'Enhanced with Power Analysis'
+      description: 'Time series analysis predicts temperature trends and thermal runaway',
+      status: 'ML-Based (Linear Regression)'
     },
     {
       id: 'bearing',
-      name: 'Bearing Fault Detection',
+      name: 'Bearing Failure Prediction',
       icon: Wind,
-      description: 'Statistical vibration analysis with anomaly detection and trend monitoring',
-      status: 'Enhanced with Z-Score Analysis'
+      description: 'Statistical ML analysis of vibration patterns for bearing degradation',
+      status: 'ML-Based (Statistical Analysis)'
+    },
+    {
+      id: 'stall',
+      name: 'Stall Risk Prediction',
+      icon: AlertTriangle,
+      description: 'ML models analyze power, current, and efficiency for stall detection',
+      status: 'ML-Based (Multi-factor Analysis)'
     },
     {
       id: 'efficiency',
-      name: 'Power Efficiency Analysis',
+      name: 'Efficiency Degradation',
       icon: Activity,
-      description: 'Monitors motor efficiency and detects performance degradation',
-      status: 'New Feature'
+      description: 'Polynomial regression tracks motor efficiency degradation over time',
+      status: 'ML-Based (Polynomial Regression)'
     },
     {
       id: 'maintenance',
       name: 'Predictive Maintenance',
       icon: Wrench,
       description: 'Usage pattern analysis and stress-based maintenance scheduling',
-      status: 'Enhanced with Stress Factors'
+      status: 'ML-Based (Pattern Analysis)'
     },
     {
       id: 'gemini',
-      name: 'AI Comprehensive Analysis',
+      name: 'AI Expert Commentary',
       icon: Brain,
-      description: 'Gemini AI provides expert-level motor health assessment and recommendations',
-      status: 'Powered by Google AI'
+      description: 'Gemini AI provides expert comments on ML predictions (not making predictions)',
+      status: 'AI Commentary Only'
     }
   ];
 
