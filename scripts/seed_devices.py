@@ -347,7 +347,17 @@ async def seed_devices():
         for device in SAMPLE_DEVICES:
             device_id = device["id"]
             specs = device["motor_specs"]
-            
+
+            # Check if device already has sensor readings
+            result = await db.execute(
+                text("SELECT COUNT(*) as count FROM sensor_readings WHERE device_id = :id"),
+                {"id": device_id}
+            )
+            existing_count = result.mappings().first()["count"]
+            if existing_count > 0:
+                print(f"⚠️  {device_id}: Skipped, already has {existing_count} readings")
+                continue
+
             # Generate 100 readings per device (spanning last 24 hours)
             readings_count = 100
             
