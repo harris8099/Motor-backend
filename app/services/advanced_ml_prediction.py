@@ -749,21 +749,16 @@ class AdvancedMLPredictionService:
     async def _call_mistral(self, prompt: str, model: str, is_json: bool) -> Optional[str]:
         if not self.mistral_client:
             raise Exception("Mistral not configured")
-        # Run sync mistral client in threadpool
-        loop = asyncio.get_event_loop()
-        
+        # Use native async method per https://docs.mistral.ai/
         messages = [{"role": "user", "content": prompt}]
         
-        response = await loop.run_in_executor(
-            None, 
-            lambda: self.mistral_client.chat.complete(model=model, messages=messages)
-        )
+        response = await self.mistral_client.chat.complete_async(model=model, messages=messages)
         return response.choices[0].message.content
 
     async def _call_gemini(self, prompt: str, model: str, is_json: bool) -> Optional[str]:
         if not self.gemini_client: raise Exception("Gemini not configured")
-        loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(None, lambda: self.gemini_client.models.generate_content(model=model, contents=prompt))
+        # Use native async method per https://ai.google.dev/gemini-api/docs
+        response = await self.gemini_client.aio.models.generate_content(model=model, contents=prompt)
         text = response.text.strip()
         if is_json:
             text = text.removeprefix('```json').removeprefix('```').removesuffix('```').strip()
@@ -771,7 +766,7 @@ class AdvancedMLPredictionService:
 
     async def _call_groq(self, prompt: str, model: str, is_json: bool) -> Optional[str]:
         if not self.groq_client: raise Exception("Groq not configured")
-        loop = asyncio.get_event_loop()
+        # Use native async client per https://console.groq.com/docs/overview
         kwargs = {
             "model": model,
             "messages": [{"role": "user", "content": prompt}],
@@ -779,7 +774,7 @@ class AdvancedMLPredictionService:
         if is_json:
             kwargs["response_format"] = {"type": "json_object"}
             
-        response = await loop.run_in_executor(None, lambda: self.groq_client.chat.completions.create(**kwargs))
+        response = await self.groq_client.chat.completions.create(**kwargs)
         return response.choices[0].message.content
     
     # Helper methods (same as before)
