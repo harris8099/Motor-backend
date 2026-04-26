@@ -45,7 +45,8 @@ async def get_devices(
     result = await db.execute(text("""
         SELECT id, name, description, is_active, created_at, updated_at, 
                last_seen_at, location, firmware_version
-        FROM devices 
+        FROM devices
+        WHERE is_active = TRUE
         ORDER BY created_at DESC
     """))
     devices = result.mappings().all()
@@ -200,19 +201,22 @@ async def delete_device(
     db: AsyncSession = Depends(get_db),
     _: None = Depends(verify_api_key)
 ):
-    """Delete a device (soft delete by setting is_active = false)"""
-    result = await db.execute(text("""
-        UPDATE devices 
-        SET is_active = FALSE, updated_at = NOW() 
-        WHERE id = :device_id
-        RETURNING id
+    """Hard delete a device and all its related data from the database."""
+    # Check device exists first
+    existing = await db.execute(text("""
+        SELECT id FROM devices WHERE id = :device_id
     """), {"device_id": device_id})
-    
-    if not result.mappings().first():
+    if not existing.mappings().first():
         raise HTTPException(status_code=404, detail="Device not found")
-    
+
+    # Delete all related data (order matters due to FK constraints)
+    await db.execute(text("DELETE FROM predictions WHERE device_id = :device_id"), {"device_id": device_id})
+    await db.execute(text("DELETE FROM fault_events WHERE device_id = :device_id"), {"device_id": device_id})
+    await db.execute(text("DELETE FROM sensor_readings WHERE device_id = :device_id"), {"device_id": device_id})
+    await db.execute(text("DELETE FROM devices WHERE id = :device_id"), {"device_id": device_id})
+
     await db.commit()
-    return {"message": "Device deleted successfully"}
+    return {"message": "Device and all related data deleted successfully"}
 
 @router.post("/devices/{device_id}/heartbeat")
 async def device_heartbeat(
