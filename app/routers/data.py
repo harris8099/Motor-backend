@@ -11,7 +11,24 @@ from app.services.prediction import run_predictions
 from app.services.ml_prediction import run_ml_predictions, ml_prediction_service
 from app.services.advanced_ml_prediction import run_advanced_ml_predictions, advanced_ml_prediction_service
 import json
+import numpy as np
 from pydantic import BaseModel
+
+
+# ── Custom JSON encoder to handle numpy types from sklearn/numpy ──────────────
+class NumpyEncoder(json.JSONEncoder):
+    """Converts numpy scalar types (numpy.bool_, numpy.float64, etc.) to
+    native Python types so json.dumps() never raises TypeError."""
+    def default(self, obj):
+        if isinstance(obj, np.bool_):
+            return bool(obj)
+        if isinstance(obj, (np.integer,)):
+            return int(obj)
+        if isinstance(obj, (np.floating,)):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super().default(obj)
 
 router = APIRouter()
 
@@ -187,7 +204,7 @@ async def receive_data(
             "type": p["type"],
             "confidence": p["confidence"],
             "severity": p["severity"],
-            "details": json.dumps(p["details"]),
+            "details": json.dumps(p["details"], cls=NumpyEncoder),
         })
 
     # ── Auto-cleanup: prevent unbounded table growth ──────────────────────────
@@ -296,7 +313,7 @@ async def analyze_with_ai(
             "type": ai_result["type"],
             "confidence": ai_result["confidence"],
             "severity": ai_result["severity"],
-            "details": json.dumps(ai_result["details"]),
+            "details": json.dumps(ai_result["details"], cls=NumpyEncoder),
         })
         await db.commit()
         return {"success": True, "analysis": ai_result, "message": "AI analysis completed and stored"}
@@ -407,7 +424,7 @@ async def analyze_with_local_models(
             "type": p["type"],
             "confidence": p["confidence"],
             "severity": p["severity"],
-            "details": json.dumps(p["details"]),
+            "details": json.dumps(p["details"], cls=NumpyEncoder),
         })
     await db.commit()
     return {"success": True, "generated": len(predictions), "message": f"Successfully ran {len(predictions)} local models."}

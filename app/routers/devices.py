@@ -76,30 +76,47 @@ async def create_device(
     db: AsyncSession = Depends(get_db),
     _: None = Depends(verify_api_key)
 ):
-    """Register a new device"""
-    # Check if device already exists
+    """Register a new device (idempotent: reactivates if it already exists)"""
+    # Check if device already exists (may have been auto-registered by ESP32 or soft-deleted)
     existing = await db.execute(text("""
         SELECT id FROM devices WHERE id = :id
     """), {"id": device.id})
+
     if existing.mappings().first():
-        raise HTTPException(status_code=400, detail="Device ID already exists")
-    
-    await db.execute(text("""
-        INSERT INTO devices (id, name, description, location, created_at, updated_at)
-        VALUES (:id, :name, :description, :location, NOW(), NOW())
-    """), {
-        "id": device.id,
-        "name": device.name or device.id,
-        "description": device.description,
-        "location": device.location
-    })
+        # Device already in DB — reactivate it and update name/location if provided
+        await db.execute(text("""
+            UPDATE devices SET
+                name        = COALESCE(:name, name),
+                description = COALESCE(:description, description),
+                location    = COALESCE(:location, location),
+                is_active   = TRUE,
+                updated_at  = NOW()
+            WHERE id = :id
+        """), {
+            "id": device.id,
+            "name": device.name or None,
+            "description": device.description,
+            "location": device.location,
+        })
+    else:
+        # Brand-new device — insert it
+        await db.execute(text("""
+            INSERT INTO devices (id, name, description, location, created_at, updated_at)
+            VALUES (:id, :name, :description, :location, NOW(), NOW())
+        """), {
+            "id": device.id,
+            "name": device.name or device.id,
+            "description": device.description,
+            "location": device.location
+        })
+
     await db.commit()
-    
-    # Return the created device
+
+    # Return the device (created or reactivated)
     result = await db.execute(text("""
         SELECT id, name, description, is_active, created_at, updated_at,
                last_seen_at, location, firmware_version
-        FROM devices 
+        FROM devices
         WHERE id = :id
     """), {"id": device.id})
     return dict(result.mappings().first())
