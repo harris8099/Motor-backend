@@ -38,17 +38,28 @@ class DeviceResponse(BaseModel):
 
 @router.get("/devices", response_model=List[DeviceResponse])
 async def get_devices(
+    include_inactive: bool = False,
     db: AsyncSession = Depends(get_db),
     _: None = Depends(verify_api_key)
 ):
-    """Get all registered devices"""
-    result = await db.execute(text("""
-        SELECT id, name, description, is_active, created_at, updated_at, 
-               last_seen_at, location, firmware_version
-        FROM devices
-        WHERE is_active = TRUE
-        ORDER BY created_at DESC
-    """))
+    """Get all registered devices. Set include_inactive=true to show offline devices."""
+    if include_inactive:
+        # Return all devices
+        result = await db.execute(text("""
+            SELECT id, name, description, is_active, created_at, updated_at, 
+                   last_seen_at, location, firmware_version
+            FROM devices
+            ORDER BY created_at DESC
+        """))
+    else:
+        # Return only active devices (for backwards compatibility)
+        result = await db.execute(text("""
+            SELECT id, name, description, is_active, created_at, updated_at, 
+                   last_seen_at, location, firmware_version
+            FROM devices
+            WHERE is_active = TRUE
+            ORDER BY created_at DESC
+        """))
     devices = result.mappings().all()
     return [dict(d) for d in devices]
 
