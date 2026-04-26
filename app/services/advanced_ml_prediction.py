@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 import statistics
 import numpy as np
 from datetime import datetime, timedelta
@@ -53,7 +54,12 @@ class AdvancedMLPredictionService:
             self.mistral_enabled = False
             
         try:
-            self.groq_client = Groq(api_key=groq_key) if self.groq_enabled else None
+            if self.groq_enabled:
+                # Use AsyncGroq for async support per https://console.groq.com/docs/overview
+                from groq import AsyncGroq
+                self.groq_client = AsyncGroq(api_key=groq_key)
+            else:
+                self.groq_client = None
         except Exception as e:
             print(f"Failed to initialize Groq client: {e}")
             self.groq_client = None
@@ -684,22 +690,46 @@ class AdvancedMLPredictionService:
             try:
                 response_text = await call_func(prompt, model_name, is_json=True)
                 if response_text:
-                    ai_predictions = json.loads(response_text)
-                    failure_prob = ai_predictions.get('failure_probability_24h', 0)
-                    return {
-                        "type": "ai_analysis",
-                        "confidence": 0.85,
-                        "severity": "high" if failure_prob > 0.5 else "medium",
-                        "details": {
-                            **ai_predictions,
-                            "prediction_mode": "cloud_ai",
-                            "based_on_ml_analysis": True,
+                    try:
+                        ai_predictions = json.loads(response_text)
+                        failure_prob = ai_predictions.get('failure_probability_24h', 0)
+                        return {
+                            "type": "ai_analysis",
+                            "confidence": 0.85,
+                            "severity": "high" if failure_prob > 0.5 else "medium",
+                            "details": {
+                                **ai_predictions,
+                                "prediction_mode": "cloud_ai",
+                                "based_on_ml_analysis": True,
+                            }
                         }
-                    }
+                    except json.JSONDecodeError as je:
+                        print(f"JSON parse error from {model_name}: {je}")
+                        # Try to extract JSON from markdown code blocks
+                        json_match = re.search(r'```(?:json)?\s*(\{[^}]+\})\s*```', response_text, re.DOTALL)
+                        if json_match:
+                            try:
+                                ai_predictions = json.loads(json_match.group(1))
+                                failure_prob = ai_predictions.get('failure_probability_24h', 0)
+                                return {
+                                    "type": "ai_analysis",
+                                    "confidence": 0.85,
+                                    "severity": "high" if failure_prob > 0.5 else "medium",
+                                    "details": {
+                                        **ai_predictions,
+                                        "prediction_mode": "cloud_ai",
+                                        "based_on_ml_analysis": True,
+                                    }
+                                }
+                            except:
+                                pass
+                        continue
             except Exception as e:
                 print(f"Prediction failed with {model_name}: {e}")
                 if "429" in str(e) or "quota" in str(e).lower() or "rate" in str(e).lower():
                     continue
+                # Continue to next provider on any error
+                continue
                 
         self.last_ai_error = "All AI providers failed or exhausted quota."
         return None
@@ -753,12 +783,35 @@ class AdvancedMLPredictionService:
         messages = [{"role": "user", "content": prompt}]
         
         response = await self.mistral_client.chat.complete_async(model=model, messages=messages)
-        return response.choices[0].message.content
+        
+        if not response:
+            raise Exception("Empty response from Mistral")
+        
+        # Debug: log response structure
+        print(f"Mistral response type: {type(response)}, has choices: {hasattr(response, 'choices')}")
+        
+        if not hasattr(response, 'choices') or not response.choices:
+            raise Exception(f"Empty choices from Mistral. Response: {response}")
+        
+        if len(response.choices) == 0:
+            raise Exception("Empty choices list from Mistral")
+        
+        choice = response.choices[0]
+        if not hasattr(choice, 'message'):
+            raise Exception("No message in Mistral response choice")
+        
+        content = choice.message.content
+        if not content or not content.strip():
+            raise Exception("Empty content from Mistral")
+        
+        return content.strip()
 
     async def _call_gemini(self, prompt: str, model: str, is_json: bool) -> Optional[str]:
         if not self.gemini_client: raise Exception("Gemini not configured")
         # Use native async method per https://ai.google.dev/gemini-api/docs
         response = await self.gemini_client.aio.models.generate_content(model=model, contents=prompt)
+        if not response or not response.text:
+            raise Exception("Empty response from Gemini")
         text = response.text.strip()
         if is_json:
             text = text.removeprefix('```json').removeprefix('```').removesuffix('```').strip()
@@ -775,7 +828,12 @@ class AdvancedMLPredictionService:
             kwargs["response_format"] = {"type": "json_object"}
             
         response = await self.groq_client.chat.completions.create(**kwargs)
-        return response.choices[0].message.content
+        if not response or not response.choices:
+            raise Exception("Empty response from Groq")
+        content = response.choices[0].message.content
+        if not content:
+            raise Exception("Empty content from Groq")
+        return content
     
     # Helper methods (same as before)
     async def _get_historical_data(self, db: AsyncSession, device_id: str, hours: int = 72) -> List[Dict]:
