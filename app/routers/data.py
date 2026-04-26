@@ -161,6 +161,15 @@ async def receive_data(
     db: AsyncSession = Depends(get_db),
     _: None = Depends(verify_api_key),
 ):
+    # Check if device exists and is active - reject data from disabled devices
+    device_check = await db.execute(text("""
+        SELECT is_active FROM devices WHERE id = :device_id
+    """), {"device_id": payload.deviceId})
+    device_row = device_check.mappings().first()
+
+    if device_row and device_row['is_active'] is False:
+        raise HTTPException(status_code=403, detail="Device is disabled. Data rejected.")
+
     previous_faults = await db.execute(text("""
         SELECT fault_overcurrent, fault_overtemp, fault_stall,
                fault_vibration, fault_overvoltage, fault_undervoltage
