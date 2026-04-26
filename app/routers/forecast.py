@@ -55,7 +55,7 @@ async def get_power_forecast(
         ORDER BY ts DESC
         LIMIT :limit
     """), {"device_id": device_id, "limit": min(hours, 100)})
-    rows = result.mappings().all()
+    rows = list(reversed(result.mappings().all()))
     
     if not rows:
         return {
@@ -86,15 +86,15 @@ async def get_power_forecast(
     forecast_horizon = 24
     power_forecast = linear_regression_forecast(power_values[-12:] if len(power_values) >= 12 else power_values, forecast_horizon)
     
-    # Energy forecast (cumulative)
+    # Energy forecast (cumulative kWh, assuming each forecast step is 1 hour)
     energy_forecast = []
     cumulative_energy = energy_values[-1] if energy_values else 0
     for p in power_forecast:
-        cumulative_energy += p / 3600  # Power (W) to Wh, assuming 1 second interval
+        cumulative_energy += p / 1000
         energy_forecast.append(cumulative_energy)
     
-    # Cost forecast
-    cost_forecast = [e * electricity_rate for e in energy_forecast]
+    # Cost forecast per forecast hour, not cumulative lifetime cost.
+    cost_forecast = [(p / 1000) * electricity_rate for p in power_forecast]
     
     # Calculate projections
     hourly_cost = avg_power / 1000 * electricity_rate  # kW * rate

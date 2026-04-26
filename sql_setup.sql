@@ -7,6 +7,7 @@ CREATE TABLE devices (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     last_seen_at    TIMESTAMPTZ,
+    last_ai_analysis_at TIMESTAMPTZ,
     location        TEXT,
     firmware_version TEXT
 );

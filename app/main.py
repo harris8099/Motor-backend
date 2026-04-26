@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 from app.routers import data, faults, predictions, forecast, devices
 from app.database import engine, Base, settings
 
@@ -21,6 +22,14 @@ app.include_router(faults.router)
 app.include_router(predictions.router)
 app.include_router(forecast.router)
 app.include_router(devices.router)
+
+@app.on_event("startup")
+async def ensure_schema_columns():
+    async with engine.begin() as conn:
+        await conn.execute(text("""
+            ALTER TABLE devices
+            ADD COLUMN IF NOT EXISTS last_ai_analysis_at TIMESTAMPTZ
+        """))
 
 @app.get("/health")
 async def health():

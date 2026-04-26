@@ -133,6 +133,16 @@ async def receive_data(
     db: AsyncSession = Depends(get_db),
     _: None = Depends(verify_api_key),
 ):
+    previous_faults = await db.execute(text("""
+        SELECT fault_overcurrent, fault_overtemp, fault_stall,
+               fault_vibration, fault_overvoltage, fault_undervoltage
+        FROM sensor_readings
+        WHERE device_id = :device_id
+        ORDER BY ts DESC
+        LIMIT 1
+    """), {"device_id": payload.deviceId})
+    previous_fault_row = previous_faults.mappings().first()
+
     # Insert sensor reading
     await db.execute(text("""
         INSERT INTO sensor_readings (
@@ -209,9 +219,26 @@ async def receive_data(
             is_active = TRUE
     """), {"device_id": payload.deviceId})
 
-    # Log active faults
-    active = [k for k, v in payload.faults.model_dump().items() if v]
-    for fault in active:
+    # Log new fault activations only, so ongoing faults don't spam the history.
+    current_faults = payload.faults.model_dump()
+    previous_faults = {
+        key.replace("fault_", ""): bool(previous_fault_row[key]) if previous_fault_row else False
+        for key in (
+            "fault_overcurrent",
+            "fault_overtemp",
+            "fault_stall",
+            "fault_vibration",
+            "fault_overvoltage",
+            "fault_undervoltage",
+        )
+    }
+    activated_faults = [
+        fault_name
+        for fault_name, is_active in current_faults.items()
+        if is_active and not previous_faults.get(fault_name, False)
+    ]
+
+    for fault in activated_faults:
         await db.execute(text("""
             INSERT INTO fault_events (device_id, fault_type)
             VALUES (:device_id, :fault_type)
@@ -276,7 +303,18 @@ async def get_readings(
                accel_x, accel_y, accel_z, tap_detected,
                fault_overcurrent, fault_overtemp, fault_stall,
                fault_vibration, fault_overvoltage, fault_undervoltage,
-               prot_max_current, prot_max_temp, prot_min_rpm
+               prot_max_current, prot_max_temp, prot_min_rpm,
+               prot_overvoltage AS prot_overvoltage_v,
+               prot_undervoltage AS prot_undervoltage_v,
+               prot_stall_current AS prot_stall_current_a,
+               prot_startup_grace AS prot_startup_grace_ms,
+               prot_fault_trip_count,
+               prot_vibration_ack_grace AS prot_vibration_ack_grace_ms,
+               maint_next_time,
+               maint_total_hours,
+               maint_hours_limit,
+               maint_total_seconds,
+               maint_limit_seconds
         FROM sensor_readings
         WHERE device_id = :device_id
         ORDER BY ts DESC LIMIT :limit
