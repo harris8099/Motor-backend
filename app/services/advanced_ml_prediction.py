@@ -705,9 +705,31 @@ class AdvancedMLPredictionService:
                         }
                     except json.JSONDecodeError as je:
                         print(f"JSON parse error from {model_name}: {je}")
-                        print(f"Response text (first 200 chars): {repr(response_text[:200]) if response_text else 'EMPTY'}")
+                        print(f"Response text (first 300 chars): {repr(response_text[:300]) if response_text else 'EMPTY'}")
                         # Try to extract JSON from markdown code blocks
-                        json_match = re.search(r'```(?:json)?\s*(\{[\s\S]*?\})\s*```', response_text, re.DOTALL)
+                        # Match ```json ... ``` or ``` ... ``` with JSON content
+                        json_match = re.search(r'```(?:json)?\s*\n?(\{[\s\S]*?\})\s*\n?```', response_text, re.DOTALL)
+                        if not json_match:
+                            # Try simpler pattern: find first { and last }
+                            start = response_text.find('{')
+                            end = response_text.rfind('}')
+                            if start != -1 and end != -1 and end > start:
+                                json_str = response_text[start:end+1]
+                                try:
+                                    ai_predictions = json.loads(json_str)
+                                    failure_prob = ai_predictions.get('failure_probability_24h', 0)
+                                    return {
+                                        "type": "ai_analysis",
+                                        "confidence": 0.85,
+                                        "severity": "high" if failure_prob > 0.5 else "medium",
+                                        "details": {
+                                            **ai_predictions,
+                                            "prediction_mode": "cloud_ai",
+                                            "based_on_ml_analysis": True,
+                                        }
+                                    }
+                                except:
+                                    pass
                         if json_match:
                             try:
                                 ai_predictions = json.loads(json_match.group(1))
