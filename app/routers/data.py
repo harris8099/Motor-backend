@@ -18,17 +18,48 @@ from pydantic import BaseModel
 # ── Custom JSON encoder to handle numpy types from sklearn/numpy ──────────────
 class NumpyEncoder(json.JSONEncoder):
     """Converts numpy scalar types (numpy.bool_, numpy.float64, etc.) to
-    native Python types so json.dumps() never raises TypeError."""
+    native Python types so json.dumps() never raises TypeError.
+    Also handles NaN/inf values which PostgreSQL JSON doesn't accept."""
     def default(self, obj):
         if isinstance(obj, np.bool_):
             return bool(obj)
         if isinstance(obj, (np.integer,)):
             return int(obj)
         if isinstance(obj, (np.floating,)):
-            return float(obj)
+            val = float(obj)
+            # PostgreSQL JSON doesn't accept NaN or Infinity
+            if np.isnan(val) or np.isinf(val):
+                return None
+            return val
         if isinstance(obj, np.ndarray):
-            return obj.tolist()
+            # Convert array and handle NaN/inf within it
+            return [None if (isinstance(x, float) and (np.isnan(x) or np.isinf(x))) else x 
+                    for x in obj.tolist()]
         return super().default(obj)
+
+
+def convert_numpy_value(val):
+    """Convert numpy scalar to Python native type, handling NaN/inf."""
+    if isinstance(val, (np.floating, np.float64, np.float32)):
+        f = float(val)
+        if np.isnan(f) or np.isinf(f):
+            return None
+        return f
+    if isinstance(val, (np.integer,)):
+        return int(val)
+    if isinstance(val, np.bool_):
+        return bool(val)
+    return val
+
+
+def _convert_dict_numpy_values(obj):
+    """Recursively convert numpy values in dict/list to native Python types."""
+    if isinstance(obj, dict):
+        return {k: _convert_dict_numpy_values(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_convert_dict_numpy_values(v) for v in obj]
+    return convert_numpy_value(obj)
+
 
 router = APIRouter()
 
@@ -196,15 +227,19 @@ async def receive_data(
         predictions = run_predictions(payload)
 
     for p in predictions:
+        # Convert numpy values including NaN to None for PostgreSQL compatibility
+        confidence = convert_numpy_value(p["confidence"])
+        details_dict = _convert_dict_numpy_values(p["details"]) if p["details"] else {}
+        
         await db.execute(text("""
             INSERT INTO predictions (device_id, prediction_type, confidence, severity, details)
             VALUES (:device_id, :type, :confidence, :severity, :details)
         """), {
             "device_id": payload.deviceId,
             "type": p["type"],
-            "confidence": p["confidence"],
+            "confidence": confidence,
             "severity": p["severity"],
-            "details": json.dumps(p["details"], cls=NumpyEncoder),
+            "details": json.dumps(details_dict, cls=NumpyEncoder),
         })
 
     # ── Auto-cleanup: prevent unbounded table growth ──────────────────────────
@@ -305,15 +340,19 @@ async def analyze_with_ai(
     ai_result = await advanced_ml_prediction_service.get_ai_analysis(payload, db)
 
     if ai_result:
+        # Convert numpy values including NaN to None for PostgreSQL compatibility
+        confidence = convert_numpy_value(ai_result["confidence"])
+        details_dict = _convert_dict_numpy_values(ai_result["details"]) if ai_result["details"] else {}
+        
         await db.execute(text("""
             INSERT INTO predictions (device_id, prediction_type, confidence, severity, details)
             VALUES (:device_id, :type, :confidence, :severity, :details)
         """), {
             "device_id": device_id,
             "type": ai_result["type"],
-            "confidence": ai_result["confidence"],
+            "confidence": confidence,
             "severity": ai_result["severity"],
-            "details": json.dumps(ai_result["details"], cls=NumpyEncoder),
+            "details": json.dumps(details_dict, cls=NumpyEncoder),
         })
         await db.commit()
         return {"success": True, "analysis": ai_result, "message": "AI analysis completed and stored"}
@@ -416,15 +455,19 @@ async def analyze_with_local_models(
         predictions = run_basic(payload)
 
     for p in predictions:
+        # Convert numpy values including NaN to None for PostgreSQL compatibility
+        confidence = convert_numpy_value(p["confidence"])
+        details_dict = _convert_dict_numpy_values(p["details"]) if p["details"] else {}
+        
         await db.execute(text("""
             INSERT INTO predictions (device_id, prediction_type, confidence, severity, details)
             VALUES (:device_id, :type, :confidence, :severity, :details)
         """), {
             "device_id": payload.deviceId,
             "type": p["type"],
-            "confidence": p["confidence"],
+            "confidence": confidence,
             "severity": p["severity"],
-            "details": json.dumps(p["details"], cls=NumpyEncoder),
+            "details": json.dumps(details_dict, cls=NumpyEncoder),
         })
     await db.commit()
     return {"success": True, "generated": len(predictions), "message": f"Successfully ran {len(predictions)} local models."}
