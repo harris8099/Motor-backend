@@ -705,8 +705,9 @@ class AdvancedMLPredictionService:
                         }
                     except json.JSONDecodeError as je:
                         print(f"JSON parse error from {model_name}: {je}")
+                        print(f"Response text (first 200 chars): {repr(response_text[:200]) if response_text else 'EMPTY'}")
                         # Try to extract JSON from markdown code blocks
-                        json_match = re.search(r'```(?:json)?\s*(\{[^}]+\})\s*```', response_text, re.DOTALL)
+                        json_match = re.search(r'```(?:json)?\s*(\{[\s\S]*?\})\s*```', response_text, re.DOTALL)
                         if json_match:
                             try:
                                 ai_predictions = json.loads(json_match.group(1))
@@ -721,7 +722,8 @@ class AdvancedMLPredictionService:
                                         "based_on_ml_analysis": True,
                                     }
                                 }
-                            except:
+                            except Exception as e2:
+                                print(f"Failed to parse extracted JSON: {e2}")
                                 pass
                         continue
             except Exception as e:
