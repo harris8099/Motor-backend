@@ -1,5 +1,8 @@
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Header
+
+# India timezone (IST = UTC+5:30)
+INDIA_TZ = timezone(timedelta(hours=5, minutes=30))
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from app.database import get_db, settings
