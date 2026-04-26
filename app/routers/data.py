@@ -237,14 +237,13 @@ async def receive_data(
         "m_ls": payload.maintenance.maintenanceHoursLimitSeconds,
     })
 
-    # Update device heartbeat (last_seen_at)
+    # Update device heartbeat (last_seen_at) - preserve is_active state (don't force TRUE)
     await db.execute(text("""
         INSERT INTO devices (id, name, last_seen_at, updated_at, is_active)
         VALUES (:device_id, :device_id, NOW(), NOW(), TRUE)
         ON CONFLICT (id) DO UPDATE SET
             last_seen_at = NOW(),
-            updated_at = NOW(),
-            is_active = TRUE
+            updated_at = NOW()
     """), {"device_id": payload.deviceId})
 
     # Log new fault activations only, so ongoing faults don't spam the history.
