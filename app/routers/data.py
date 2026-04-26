@@ -61,6 +61,31 @@ def _convert_dict_numpy_values(obj):
     return convert_numpy_value(obj)
 
 
+def sanitize_for_json(obj):
+    """
+    Recursively sanitize an object for JSON serialization.
+    Handles both numpy types and native Python floats with NaN/inf.
+    PostgreSQL JSON columns do not accept NaN or Infinity values.
+    """
+    if isinstance(obj, dict):
+        return {k: sanitize_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [sanitize_for_json(v) for v in obj]
+    if isinstance(obj, (np.floating, np.float64, np.float32)):
+        f = float(obj)
+        return None if (np.isnan(f) or np.isinf(f)) else f
+    if isinstance(obj, float):
+        # Native Python float - check for NaN/inf
+        return None if (np.isnan(obj) or np.isinf(obj)) else obj
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+    if isinstance(obj, np.bool_):
+        return bool(obj)
+    if isinstance(obj, np.ndarray):
+        return sanitize_for_json(obj.tolist())
+    return obj
+
+
 router = APIRouter()
 
 _GEMINI_COOLDOWN_SECONDS = 30
@@ -378,10 +403,10 @@ async def analyze_with_ai(
     ai_result = await advanced_ml_prediction_service.get_ai_analysis(payload, db)
 
     if ai_result:
-        # Convert numpy values including NaN to None for PostgreSQL compatibility
-        confidence = convert_numpy_value(ai_result["confidence"])
-        details_dict = _convert_dict_numpy_values(ai_result["details"]) if ai_result["details"] else {}
-        
+        # Sanitize all values for PostgreSQL JSON compatibility (no NaN/inf allowed)
+        confidence = sanitize_for_json(ai_result["confidence"])
+        details_dict = sanitize_for_json(ai_result["details"]) if ai_result["details"] else {}
+
         await db.execute(text("""
             INSERT INTO predictions (device_id, prediction_type, confidence, severity, details)
             VALUES (:device_id, :type, :confidence, :severity, :details)
@@ -493,10 +518,10 @@ async def analyze_with_local_models(
         predictions = run_basic(payload)
 
     for p in predictions:
-        # Convert numpy values including NaN to None for PostgreSQL compatibility
-        confidence = convert_numpy_value(p["confidence"])
-        details_dict = _convert_dict_numpy_values(p["details"]) if p["details"] else {}
-        
+        # Sanitize all values for PostgreSQL JSON compatibility (no NaN/inf allowed)
+        confidence = sanitize_for_json(p["confidence"])
+        details_dict = sanitize_for_json(p["details"]) if p["details"] else {}
+
         await db.execute(text("""
             INSERT INTO predictions (device_id, prediction_type, confidence, severity, details)
             VALUES (:device_id, :type, :confidence, :severity, :details)

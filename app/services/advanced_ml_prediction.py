@@ -302,8 +302,10 @@ class AdvancedMLPredictionService:
             svm_anomaly = self.one_class_svm.predict(current_features)[0] == -1
             anomaly_scores['one_class_svm'] = svm_score
             
-            # Statistical Z-score method
-            z_scores = np.abs((current_features[0] - np.mean(features, axis=0)) / np.std(features, axis=0))
+            # Statistical Z-score method with guard against zero std
+            stds = np.std(features, axis=0)
+            # Avoid division by zero - if std is near zero, z-score is 0 (no deviation)
+            z_scores = np.abs(np.where(stds > 1e-9, (current_features[0] - np.mean(features, axis=0)) / stds, 0.0))
             max_z_score = np.max(z_scores)
             anomaly_scores['z_score'] = -max_z_score  # Negative for consistency
             
