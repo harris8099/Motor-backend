@@ -93,39 +93,23 @@ class AdvancedMLPredictionService:
             return None
         
         try:
-            # Get recent predictions and ML results for context
+            # Use already-stored recent predictions — no need to re-run ML models
             result = await db.execute(text("""
                 SELECT prediction_type, confidence, severity, details
                 FROM predictions
                 WHERE device_id = :device_id
-                ORDER BY ts DESC LIMIT 15
+                ORDER BY ts DESC LIMIT 10
             """), {"device_id": payload.deviceId})
-            recent_predictions = [dict(row) for row in result.mappings()]
-            
-            # Get historical data
-            historical_data = await self._get_historical_data(db, payload.deviceId, hours=72)
-            
-            # Get current ML predictions for this payload
-            features = self._prepare_features(historical_data)
-            current_features = self._extract_current_features(payload)
-            
-            ml_results = []
-            
-            # Run quick ML checks to provide context
-            anomaly = await self._detect_anomalies_advanced(features, current_features, historical_data)
-            if anomaly: ml_results.append(anomaly)
-            
-            bearing = await self._predict_bearing_failure_nasa(features, current_features, historical_data)
-            if bearing: ml_results.append(bearing)
-            
-            rul = await self._predict_remaining_useful_life(features, current_features, historical_data)
-            if rul: ml_results.append(rul)
-            
+            recent_predictions = [
+                {"type": row["prediction_type"], "confidence": row["confidence"], "severity": row["severity"]}
+                for row in result.mappings()
+            ]
+
             # Call Gemini based on mode
             if self.gemini_mode == 'prediction':
-                return await self._get_gemini_predictions(payload, historical_data, ml_results)
+                return await self._get_gemini_predictions(payload, recent_predictions)
             else:
-                return await self._get_gemini_commentary(payload, historical_data, ml_results)
+                return await self._get_gemini_commentary(payload, recent_predictions)
                 
         except Exception as e:
             self.last_gemini_error = str(e)
@@ -640,122 +624,75 @@ class AdvancedMLPredictionService:
         
         return None
     
-    async def _get_gemini_predictions(self, payload: SensorPayload, historical_data: List[Dict], ml_predictions: List[dict]) -> Optional[dict]:
+    async def _get_gemini_predictions(self, payload: SensorPayload, ml_predictions: list) -> Optional[dict]:
         """Gemini AI makes predictions (not just commentary)"""
         try:
-            # Prepare comprehensive data for Gemini
-            data_summary = {
-                "current_readings": {
-                    "rpm": payload.motor.rpm,
-                    "current": payload.power.current,
-                    "voltage": payload.power.voltage,
-                    "power": payload.power.power,
-                    "temp1": payload.temperature.t1,
-                    "temp2": payload.temperature.t2,
-                    "vibration": {
-                        "x": payload.vibration.x,
-                        "y": payload.vibration.y,
-                        "z": payload.vibration.z
-                    }
-                },
-                "operational_context": {
-                    "uptime": payload.uptime,
-                    "motor_running": payload.motor.running,
-                    "maintenance_hours": payload.maintenance.totalLifeCycleHours,
-                    "maintenance_limit": payload.maintenance.maintenanceHoursLimit
-                },
-                "protection_limits": {
-                    "max_current": payload.protection.maxCurrentA,
-                    "max_temp": payload.protection.maxTempC,
-                    "min_rpm": payload.protection.minRpm
-                }
-            }
+            avg_temp = round((payload.temperature.t1 + payload.temperature.t2) / 2, 1)
+            alerts = ", ".join(
+                f"{p['type']}(conf={round(p['confidence'],2)},{p['severity']})"
+                for p in ml_predictions[:5]
+            ) or "none"
             
-            prompt = f"""
-            As an expert motor reliability engineer, analyze this motor data and make specific predictions about future failures and maintenance needs.
-            
-            Current Motor Data: {json.dumps(data_summary, indent=2)}
-            ML Model Predictions: {json.dumps(ml_predictions, indent=2)}
-            
-            Provide predictions for:
-            1. Likelihood of failure in next 24 hours (percentage)
-            2. Most likely failure mode (bearing, overheating, stall, electrical)
-            3. Recommended maintenance actions
-            4. Critical parameters to monitor
-            5. Expected remaining useful life in days
-            
-            Be specific and actionable. This is for industrial motor maintenance planning.
-            
-            Respond in JSON format with these exact keys: failure_probability_24h, likely_failure_mode, maintenance_actions, critical_parameters, estimated_rul_days
-            """
-            
+            prompt = (
+                f"Motor: rpm={payload.motor.rpm} power={payload.power.power}W "
+                f"temp={avg_temp}C current={payload.power.current}A "
+                f"uptime={payload.uptime}h running={payload.motor.running}\n"
+                f"Limits: maxCurrent={payload.protection.maxCurrentA}A "
+                f"maxTemp={payload.protection.maxTempC}C minRpm={payload.protection.minRpm}\n"
+                f"ML alerts: {alerts}\n"
+                f"As a motor reliability engineer, predict: failure probability in 24h (%), "
+                f"most likely failure mode, top 2 maintenance actions, estimated RUL in days.\n"
+                f"Reply in JSON: {{\"failure_probability_24h\": 0.0, \"likely_failure_mode\": \"\", "
+                f"\"maintenance_actions\": [], \"estimated_rul_days\": 0}}"
+            )
+
             response = self.client.models.generate_content(
                 model='gemini-2.0-flash',
                 contents=prompt
             )
-            ai_predictions = json.loads(response.text)
-            
+            # Strip markdown code fences if present
+            raw = response.text.strip().removeprefix('```json').removeprefix('```').removesuffix('```').strip()
+            ai_predictions = json.loads(raw)
+
+            failure_prob = ai_predictions.get('failure_probability_24h', 0)
             return {
                 "type": "ai_analysis",
                 "confidence": 0.85,
-                "severity": ai_predictions.get('failure_probability_24h', 0) > 0.5 and "high" or "medium",
+                "severity": "high" if failure_prob > 0.5 else "medium",
                 "details": {
                     **ai_predictions,
                     "prediction_mode": "gemini_ai",
                     "based_on_ml_analysis": True,
-                    "recommendation_priority": "high" if ai_predictions.get('failure_probability_24h', 0) > 0.7 else "medium"
                 }
             }
-            
+
         except Exception as e:
             self.last_gemini_error = str(e)
             print(f"Gemini AI prediction failed: {e}")
             return None
     
-    async def _get_gemini_commentary(self, payload: SensorPayload, historical_data: List[Dict], ml_predictions: List[dict]) -> Optional[dict]:
+    async def _get_gemini_commentary(self, payload: SensorPayload, ml_predictions: list) -> Optional[dict]:
         """Gemini AI provides commentary on ML predictions"""
         try:
-            ml_summary = {
-                "device_id": payload.deviceId,
-                "current_status": {
-                    "rpm": payload.motor.rpm,
-                    "power": payload.power.power,
-                    "temperature": (payload.temperature.t1 + payload.temperature.t2) / 2,
-                    "current": payload.power.current
-                },
-                "ml_predictions": [
-                    {
-                        "type": pred["type"],
-                        "confidence": pred["confidence"],
-                        "severity": pred["severity"]
-                    } for pred in ml_predictions
-                ],
-                "data_quality": {
-                    "historical_data_points": len(historical_data),
-                    "analysis_period": "72 hours"
-                }
-            }
-            
-            prompt = f"""
-            You are an expert industrial engineer commenting on advanced ML-based motor analysis. The ML models have generated these predictions:
-            
-            Device Status: {json.dumps(ml_summary['current_status'], indent=2)}
-            ML Predictions: {json.dumps(ml_summary['ml_predictions'], indent=2)}
-            Data Quality: {json.dumps(ml_summary['data_quality'], indent=2)}
-            
-            Provide a brief expert comment (2-3 sentences) on the ML analysis results. Focus on:
-            1. Overall assessment of the ML predictions
-            2. Key concerns or insights
-            3. Recommended priority level
-            
-            Keep it concise and professional. Do not make new predictions - only comment on the ML results.
-            """
-            
+            avg_temp = round((payload.temperature.t1 + payload.temperature.t2) / 2, 1)
+            alerts = ", ".join(
+                f"{p['type']}(conf={round(p['confidence'],2)},{p['severity']})"
+                for p in ml_predictions[:5]
+            ) or "none"
+
+            prompt = (
+                f"Motor: rpm={payload.motor.rpm} power={payload.power.power}W "
+                f"temp={avg_temp}C current={payload.power.current}A uptime={payload.uptime}h\n"
+                f"ML alerts: {alerts}\n"
+                f"In 2-3 sentences, give an expert maintenance engineer comment on these ML alerts. "
+                f"Focus on key concern and recommended priority. Be concise."
+            )
+
             response = self.client.models.generate_content(
                 model='gemini-2.0-flash',
                 contents=prompt
             )
-            
+
             return {
                 "type": "ai_comment",
                 "confidence": 0.95,
@@ -767,7 +704,7 @@ class AdvancedMLPredictionService:
                     "gemini_mode": "commentary"
                 }
             }
-            
+
         except Exception as e:
             self.last_gemini_error = str(e)
             print(f"Gemini commentary failed: {e}")
