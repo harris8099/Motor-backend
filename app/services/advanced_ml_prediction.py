@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from app.schemas import SensorPayload
 from google import genai
+from mistralai.client import Mistral
+from groq import Groq
 from app.database import settings
 from sklearn.ensemble import IsolationForest, RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
@@ -19,12 +21,45 @@ import scipy.stats as stats
 
 class AdvancedMLPredictionService:
     def __init__(self):
-        # Gemini AI Configuration
-        self.gemini_enabled = hasattr(settings, 'gemini_api_key') and settings.gemini_api_key
-        self.gemini_mode = getattr(settings, 'gemini_mode', 'commentary')  # 'commentary', 'prediction', 'disabled'
-        if self.gemini_enabled and self.gemini_mode != 'disabled':
-            self.client = genai.Client(api_key=settings.gemini_api_key)
-        self.last_gemini_error: Optional[str] = None
+        # AI Configuration
+        self.gemini_mode = getattr(settings, 'gemini_mode', 'commentary')
+        
+        # Properly check for non-empty API keys
+        gemini_key = getattr(settings, 'gemini_api_key', None)
+        mistral_key = getattr(settings, 'mistral_api_key', None)
+        groq_key = getattr(settings, 'groq_api_key', None)
+        
+        self.gemini_enabled = bool(gemini_key and str(gemini_key).strip())
+        self.mistral_enabled = bool(mistral_key and str(mistral_key).strip())
+        self.groq_enabled = bool(groq_key and str(groq_key).strip())
+        
+        # Only create clients if API keys are valid
+        try:
+            self.gemini_client = genai.Client(api_key=gemini_key) if self.gemini_enabled else None
+        except Exception as e:
+            print(f"Failed to initialize Gemini client: {e}")
+            self.gemini_client = None
+            self.gemini_enabled = False
+            
+        try:
+            if self.mistral_enabled:
+                self.mistral_client = Mistral(api_key=mistral_key)
+                print(f"Mistral AI initialized successfully")
+            else:
+                self.mistral_client = None
+        except Exception as e:
+            print(f"Failed to initialize Mistral client: {e}")
+            self.mistral_client = None
+            self.mistral_enabled = False
+            
+        try:
+            self.groq_client = Groq(api_key=groq_key) if self.groq_enabled else None
+        except Exception as e:
+            print(f"Failed to initialize Groq client: {e}")
+            self.groq_client = None
+            self.groq_enabled = False
+        
+        self.last_ai_error: Optional[str] = None
         
         # Initialize ML Models
         self.isolation_forest = IsolationForest(contamination=0.1, random_state=42)
@@ -85,11 +120,11 @@ class AdvancedMLPredictionService:
         # This allows ML models to run fast at intervals while AI analysis is optional
         return results
     
-    async def get_gemini_analysis(self, payload: SensorPayload, db: AsyncSession) -> Optional[dict]:
-        """Get on-demand Gemini AI analysis (called separately from automatic predictions)"""
-        self.last_gemini_error = None
-        if not self.gemini_enabled:
-            self.last_gemini_error = "Gemini API key is not configured in the backend environment."
+    async def get_ai_analysis(self, payload: SensorPayload, db: AsyncSession) -> Optional[dict]:
+        """Get on-demand AI analysis using Mistral -> Gemini -> Groq fallback loop"""
+        self.last_ai_error = None
+        if not any([self.mistral_enabled, self.gemini_enabled, self.groq_enabled]):
+            self.last_ai_error = "No AI providers configured. Set MISTRAL_API_KEY, GEMINI_API_KEY, or GROQ_API_KEY."
             return None
         
         try:
@@ -105,15 +140,15 @@ class AdvancedMLPredictionService:
                 for row in result.mappings()
             ]
 
-            # Call Gemini based on mode
+            # Call AI based on mode
             if self.gemini_mode == 'prediction':
-                return await self._get_gemini_predictions(payload, recent_predictions)
+                return await self._get_ai_predictions(payload, recent_predictions)
             else:
-                return await self._get_gemini_commentary(payload, recent_predictions)
+                return await self._get_ai_commentary(payload, recent_predictions)
                 
         except Exception as e:
-            self.last_gemini_error = str(e)
-            print(f"On-demand Gemini analysis failed: {e}")
+            self.last_ai_error = str(e)
+            print(f"On-demand AI analysis failed: {e}")
             return None
     
     async def _predict_bearing_failure_nasa(self, features: np.ndarray, current_features: np.ndarray, historical_data: List[Dict]) -> Optional[dict]:
@@ -624,91 +659,128 @@ class AdvancedMLPredictionService:
         
         return None
     
-    async def _get_gemini_predictions(self, payload: SensorPayload, ml_predictions: list) -> Optional[dict]:
-        """Gemini AI makes predictions (not just commentary)"""
-        try:
-            avg_temp = round((payload.temperature.t1 + payload.temperature.t2) / 2, 1)
-            alerts = ", ".join(
-                f"{p['type']}(conf={round(p['confidence'],2)},{p['severity']})"
-                for p in ml_predictions[:5]
-            ) or "none"
+    async def _get_ai_predictions(self, payload: SensorPayload, ml_predictions: list) -> Optional[dict]:
+        """AI makes predictions based on ML alerts"""
+        avg_temp = round((payload.temperature.t1 + payload.temperature.t2) / 2, 1)
+        alerts = ", ".join(f"{p['type']}(conf={round(p['confidence'],2)},{p['severity']})" for p in ml_predictions[:5]) or "none"
+        
+        prompt = (
+            f"Motor: rpm={payload.motor.rpm} power={payload.power.power}W "
+            f"temp={avg_temp}C current={payload.power.current}A uptime={payload.uptime}h running={payload.motor.running}\n"
+            f"Limits: maxCurrent={payload.protection.maxCurrentA}A maxTemp={payload.protection.maxTempC}C minRpm={payload.protection.minRpm}\n"
+            f"ML alerts: {alerts}\n"
+            f"As a motor reliability engineer, predict: failure probability in 24h (%), "
+            f"most likely failure mode, top 2 maintenance actions, estimated RUL in days.\n"
+            f"Reply strictly in JSON format: {{\"failure_probability_24h\": 0.0, \"likely_failure_mode\": \"\", \"maintenance_actions\": [], \"estimated_rul_days\": 0}}"
+        )
+
+        providers = [
+            (self._call_mistral, "mistral-small"),
+            (self._call_gemini, "gemini-2.0-flash"),
+            (self._call_groq, "llama-3.3-70b-versatile")
+        ]
+
+        for call_func, model_name in providers:
+            try:
+                response_text = await call_func(prompt, model_name, is_json=True)
+                if response_text:
+                    ai_predictions = json.loads(response_text)
+                    failure_prob = ai_predictions.get('failure_probability_24h', 0)
+                    return {
+                        "type": "ai_analysis",
+                        "confidence": 0.85,
+                        "severity": "high" if failure_prob > 0.5 else "medium",
+                        "details": {
+                            **ai_predictions,
+                            "prediction_mode": "cloud_ai",
+                            "based_on_ml_analysis": True,
+                        }
+                    }
+            except Exception as e:
+                print(f"Prediction failed with {model_name}: {e}")
+                if "429" in str(e) or "quota" in str(e).lower() or "rate" in str(e).lower():
+                    continue
+                
+        self.last_ai_error = "All AI providers failed or exhausted quota."
+        return None
+
+    async def _get_ai_commentary(self, payload: SensorPayload, ml_predictions: list) -> Optional[dict]:
+        """AI provides commentary on ML predictions"""
+        avg_temp = round((payload.temperature.t1 + payload.temperature.t2) / 2, 1)
+        alerts = ", ".join(f"{p['type']}(conf={round(p['confidence'],2)},{p['severity']})" for p in ml_predictions[:5]) or "none"
+
+        prompt = (
+            f"Motor: rpm={payload.motor.rpm} power={payload.power.power}W "
+            f"temp={avg_temp}C current={payload.power.current}A uptime={payload.uptime}h\n"
+            f"ML alerts: {alerts}\n"
+            f"In 2-3 sentences, give an expert maintenance engineer comment on these ML alerts. "
+            f"Focus on key concern and recommended priority. Be concise."
+        )
+
+        providers = [
+            (self._call_mistral, "mistral-small"),
+            (self._call_gemini, "gemini-2.0-flash"),
+            (self._call_groq, "llama-3.3-70b-versatile")
+        ]
+
+        for call_func, model_name in providers:
+            try:
+                response_text = await call_func(prompt, model_name, is_json=False)
+                if response_text:
+                    return {
+                        "type": "ai_comment",
+                        "confidence": 0.95,
+                        "severity": "low",
+                        "details": {
+                            "comment": response_text.strip(),
+                            "ml_predictions_count": len(ml_predictions),
+                            "analysis_type": "ML expert commentary",
+                            "gemini_mode": "commentary"
+                        }
+                    }
+            except Exception as e:
+                print(f"Commentary failed with {model_name}: {e}")
+                if "429" in str(e) or "quota" in str(e).lower() or "rate" in str(e).lower():
+                    continue
+                    
+        self.last_ai_error = "All AI providers failed or exhausted quota."
+        return None
+
+    async def _call_mistral(self, prompt: str, model: str, is_json: bool) -> Optional[str]:
+        if not self.mistral_client:
+            raise Exception("Mistral not configured")
+        # Run sync mistral client in threadpool
+        loop = asyncio.get_event_loop()
+        
+        messages = [{"role": "user", "content": prompt}]
+        
+        response = await loop.run_in_executor(
+            None, 
+            lambda: self.mistral_client.chat.complete(model=model, messages=messages)
+        )
+        return response.choices[0].message.content
+
+    async def _call_gemini(self, prompt: str, model: str, is_json: bool) -> Optional[str]:
+        if not self.gemini_client: raise Exception("Gemini not configured")
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(None, lambda: self.gemini_client.models.generate_content(model=model, contents=prompt))
+        text = response.text.strip()
+        if is_json:
+            text = text.removeprefix('```json').removeprefix('```').removesuffix('```').strip()
+        return text
+
+    async def _call_groq(self, prompt: str, model: str, is_json: bool) -> Optional[str]:
+        if not self.groq_client: raise Exception("Groq not configured")
+        loop = asyncio.get_event_loop()
+        kwargs = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        if is_json:
+            kwargs["response_format"] = {"type": "json_object"}
             
-            prompt = (
-                f"Motor: rpm={payload.motor.rpm} power={payload.power.power}W "
-                f"temp={avg_temp}C current={payload.power.current}A "
-                f"uptime={payload.uptime}h running={payload.motor.running}\n"
-                f"Limits: maxCurrent={payload.protection.maxCurrentA}A "
-                f"maxTemp={payload.protection.maxTempC}C minRpm={payload.protection.minRpm}\n"
-                f"ML alerts: {alerts}\n"
-                f"As a motor reliability engineer, predict: failure probability in 24h (%), "
-                f"most likely failure mode, top 2 maintenance actions, estimated RUL in days.\n"
-                f"Reply in JSON: {{\"failure_probability_24h\": 0.0, \"likely_failure_mode\": \"\", "
-                f"\"maintenance_actions\": [], \"estimated_rul_days\": 0}}"
-            )
-
-            response = self.client.models.generate_content(
-                model='gemini-2.0-flash',
-                contents=prompt
-            )
-            # Strip markdown code fences if present
-            raw = response.text.strip().removeprefix('```json').removeprefix('```').removesuffix('```').strip()
-            ai_predictions = json.loads(raw)
-
-            failure_prob = ai_predictions.get('failure_probability_24h', 0)
-            return {
-                "type": "ai_analysis",
-                "confidence": 0.85,
-                "severity": "high" if failure_prob > 0.5 else "medium",
-                "details": {
-                    **ai_predictions,
-                    "prediction_mode": "gemini_ai",
-                    "based_on_ml_analysis": True,
-                }
-            }
-
-        except Exception as e:
-            self.last_gemini_error = str(e)
-            print(f"Gemini AI prediction failed: {e}")
-            return None
-    
-    async def _get_gemini_commentary(self, payload: SensorPayload, ml_predictions: list) -> Optional[dict]:
-        """Gemini AI provides commentary on ML predictions"""
-        try:
-            avg_temp = round((payload.temperature.t1 + payload.temperature.t2) / 2, 1)
-            alerts = ", ".join(
-                f"{p['type']}(conf={round(p['confidence'],2)},{p['severity']})"
-                for p in ml_predictions[:5]
-            ) or "none"
-
-            prompt = (
-                f"Motor: rpm={payload.motor.rpm} power={payload.power.power}W "
-                f"temp={avg_temp}C current={payload.power.current}A uptime={payload.uptime}h\n"
-                f"ML alerts: {alerts}\n"
-                f"In 2-3 sentences, give an expert maintenance engineer comment on these ML alerts. "
-                f"Focus on key concern and recommended priority. Be concise."
-            )
-
-            response = self.client.models.generate_content(
-                model='gemini-2.0-flash',
-                contents=prompt
-            )
-
-            return {
-                "type": "ai_comment",
-                "confidence": 0.95,
-                "severity": "low",
-                "details": {
-                    "comment": response.text.strip(),
-                    "ml_predictions_count": len(ml_predictions),
-                    "analysis_type": "ML expert commentary",
-                    "gemini_mode": "commentary"
-                }
-            }
-
-        except Exception as e:
-            self.last_gemini_error = str(e)
-            print(f"Gemini commentary failed: {e}")
-            return None
+        response = await loop.run_in_executor(None, lambda: self.groq_client.chat.completions.create(**kwargs))
+        return response.choices[0].message.content
     
     # Helper methods (same as before)
     async def _get_historical_data(self, db: AsyncSession, device_id: str, hours: int = 72) -> List[Dict]:

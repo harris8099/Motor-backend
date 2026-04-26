@@ -17,9 +17,18 @@ from sklearn.metrics import mean_absolute_error
 class MLPredictionService:
     def __init__(self):
         # Initialize Gemini AI for commenting only
-        self.gemini_enabled = hasattr(settings, 'gemini_api_key') and settings.gemini_api_key
+        gemini_key = getattr(settings, 'gemini_api_key', None)
+        self.gemini_enabled = bool(gemini_key and str(gemini_key).strip())
+        
         if self.gemini_enabled:
-            self.client = genai.Client(api_key=settings.gemini_api_key)
+            try:
+                self.client = genai.Client(api_key=gemini_key)
+            except Exception as e:
+                print(f"Failed to initialize Gemini client: {e}")
+                self.client = None
+                self.gemini_enabled = False
+        else:
+            self.client = None
         
         # Initialize ML models
         self.isolation_forest = IsolationForest(contamination=0.1, random_state=42)

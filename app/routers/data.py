@@ -155,12 +155,12 @@ async def get_readings(
     return {"data": [dict(r) for r in rows]}
 
 @router.post("/ai/analyze/{device_id}")
-async def analyze_with_gemini(
+async def analyze_with_ai(
     device_id: str,
     db: AsyncSession = Depends(get_db),
     _: None = Depends(verify_api_key)
 ):
-    """On-demand Gemini AI analysis - separate from automatic ML predictions"""
+    """On-demand Cloud AI analysis (Mistral, Gemini, Groq)"""
     # Enforce 30-second per-device cooldown
     now = time.time()
     last_call = _last_gemini_call.get(device_id, 0)
@@ -251,62 +251,52 @@ async def analyze_with_gemini(
         uptime=row['uptime_seconds']
     )
     
-    # Call appropriate Gemini service based on prediction mode
-    prediction_mode = getattr(settings, 'prediction_mode', 'advanced')
+    # Call AI service (now handles Mistral -> Gemini -> Groq fallback)
+    ai_result = await advanced_ml_prediction_service.get_ai_analysis(payload, db)
     
-    if prediction_mode == 'advanced':
-        gemini_result = await advanced_ml_prediction_service.get_gemini_analysis(payload, db)
-    else:
-        gemini_result = await ml_prediction_service.get_gemini_commentary(payload, db)
-    
-    if gemini_result:
+    if ai_result:
         # Store the AI analysis as a prediction
         await db.execute(text("""
             INSERT INTO predictions (device_id, prediction_type, confidence, severity, details)
             VALUES (:device_id, :type, :confidence, :severity, :details)
         """), {
             "device_id": device_id,
-            "type": gemini_result["type"],
-            "confidence": gemini_result["confidence"],
-            "severity": gemini_result["severity"],
-            "details": json.dumps(gemini_result["details"])
+            "type": ai_result["type"],
+            "confidence": ai_result["confidence"],
+            "severity": ai_result["severity"],
+            "details": json.dumps(ai_result["details"])
         })
         await db.commit()
         
         return {
             "success": True,
-            "analysis": gemini_result,
-            "message": "Gemini AI analysis completed and stored"
+            "analysis": ai_result,
+            "message": "AI analysis completed and stored"
         }
     else:
-        gemini_error = getattr(advanced_ml_prediction_service, 'last_gemini_error', '') or ''
-        if 'RESOURCE_EXHAUSTED' in gemini_error or 'quota' in gemini_error.lower():
-            message = "Gemini request hit the current Google quota limit for this project. Try again later or use a project with available quota."
-        elif gemini_error:
-            message = f"Gemini AI analysis failed: {gemini_error}"
-        else:
-            message = "Gemini AI analysis failed or is not configured. Set GEMINI_API_KEY in the backend .env file."
+        ai_error = getattr(advanced_ml_prediction_service, 'last_ai_error', '') or 'AI analysis failed or is not configured.'
         return {
             "success": False,
             "analysis": None,
-            "message": message
+            "message": ai_error
         }
 
 
-class GeminiModeRequest(BaseModel):
+class AIModeRequest(BaseModel):
     mode: str  # 'commentary' or 'prediction'
 
 @router.post("/ai/mode")
-async def set_gemini_mode(
-    body: GeminiModeRequest,
+async def set_ai_mode(
+    body: AIModeRequest,
     _: None = Depends(verify_api_key)
 ):
-    """Change the Gemini analysis mode at runtime without restarting the server."""
+    """Change the AI analysis mode at runtime without restarting the server."""
     if body.mode not in ('commentary', 'prediction', 'disabled'):
         raise HTTPException(status_code=400, detail="mode must be 'commentary', 'prediction', or 'disabled'")
     advanced_ml_prediction_service.gemini_mode = body.mode
-    ml_prediction_service.gemini_mode = body.mode
-    return {"success": True, "mode": body.mode, "message": f"Gemini mode updated to '{body.mode}'"}
+    if hasattr(ml_prediction_service, 'gemini_mode'):
+        ml_prediction_service.gemini_mode = body.mode
+    return {"success": True, "mode": body.mode, "message": f"AI mode updated to '{body.mode}'"}
 
 @router.post("/ai/local-analyze/{device_id}")
 async def analyze_with_local_models(

@@ -9,3 +9,5 @@ numpy
 google-genai
 scikit-learn
 scipy
+mistralai
+groq
