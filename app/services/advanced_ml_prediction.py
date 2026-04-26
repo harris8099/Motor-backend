@@ -828,7 +828,10 @@ class AdvancedMLPredictionService:
         if not content or not content.strip():
             raise Exception("Empty content from Mistral")
         
-        return content.strip()
+        text = content.strip()
+        if is_json:
+            text = text.removeprefix('```json').removeprefix('```').removesuffix('```').strip()
+        return text
 
     async def _call_gemini(self, prompt: str, model: str, is_json: bool) -> Optional[str]:
         if not self.gemini_client: raise Exception("Gemini not configured")

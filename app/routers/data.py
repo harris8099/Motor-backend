@@ -1,31 +1,89 @@
+from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from app.database import get_db, settings
-from app.schemas import SensorPayload
+from app.schemas import (
+    SensorPayload, FaultsData, MaintenanceData, MotorData,
+    PowerData, ProtectionData, TemperatureData, VibrationData,
+)
 from app.services.prediction import run_predictions
 from app.services.ml_prediction import run_ml_predictions, ml_prediction_service
 from app.services.advanced_ml_prediction import run_advanced_ml_predictions, advanced_ml_prediction_service
 import json
-import time
 from pydantic import BaseModel
 
 router = APIRouter()
 
-# Per-device cooldown tracker (30 second cooldown between Gemini calls)
-_last_gemini_call: dict[str, float] = {}
 _GEMINI_COOLDOWN_SECONDS = 30
 
 
+# ── Auth ──────────────────────────────────────────────────────────────────────
 def verify_api_key(x_api_key: str = Header(...)):
     if x_api_key != settings.api_key:
         raise HTTPException(status_code=401, detail="Invalid API key")
 
+
+# ── Shared helper: DB row → SensorPayload ────────────────────────────────────
+def _row_to_payload(device_id: str, row) -> SensorPayload:
+    """Convert a sensor_readings DB row back into a SensorPayload object."""
+    return SensorPayload(
+        deviceId=device_id,
+        motor=MotorData(
+            running=row['motor_running'],
+            rpm=row['rpm'],
+            pulse=row['pulse'],
+            uptime=row['uptime_seconds'],
+        ),
+        power=PowerData(
+            voltage=row['voltage'],
+            current=row['current'],
+            power=row['power'],
+            powerFactor=row['power_factor'],
+            energy=row['energy'],
+            frequency=row['frequency'],
+        ),
+        temperature=TemperatureData(t1=row['temp1'], t2=row['temp2']),
+        vibration=VibrationData(
+            x=row['accel_x'], y=row['accel_y'], z=row['accel_z'],
+            tap=row['tap_detected'],
+        ),
+        faults=FaultsData(
+            overcurrent=row['fault_overcurrent'],
+            overtemp=row['fault_overtemp'],
+            stall=row['fault_stall'],
+            vibration=row['fault_vibration'],
+            overvoltage=row['fault_overvoltage'],
+            undervoltage=row['fault_undervoltage'],
+        ),
+        protection=ProtectionData(
+            maxCurrentA=row['prot_max_current'],
+            maxTempC=row['prot_max_temp'],
+            minRpm=row['prot_min_rpm'],
+            overvoltageV=row['prot_overvoltage'],
+            undervoltageV=row['prot_undervoltage'],
+            stallCurrentA=row['prot_stall_current'],
+            startupGraceMs=row['prot_startup_grace'],
+            faultTripCount=row['prot_fault_trip_count'],
+            vibrationAckGraceMs=row['prot_vibration_ack_grace'],
+        ),
+        maintenance=MaintenanceData(
+            nextMaintenanceTime=row['maint_next_time'],
+            totalLifeCycleHours=row['maint_total_hours'],
+            maintenanceHoursLimit=row['maint_hours_limit'],
+            totalLifeCycleSeconds=row['maint_total_seconds'],
+            maintenanceHoursLimitSeconds=row['maint_limit_seconds'],
+        ),
+        uptime=row['uptime_seconds'],
+    )
+
+
+# ── POST /data ────────────────────────────────────────────────────────────────
 @router.post("/data")
 async def receive_data(
     payload: SensorPayload,
     db: AsyncSession = Depends(get_db),
-    _: None = Depends(verify_api_key)
+    _: None = Depends(verify_api_key),
 ):
     # Insert sensor reading
     await db.execute(text("""
@@ -35,11 +93,11 @@ async def receive_data(
             temp1, temp2, accel_x, accel_y, accel_z, tap_detected,
             fault_overcurrent, fault_overtemp, fault_stall,
             fault_vibration, fault_overvoltage, fault_undervoltage,
-            
+
             prot_max_current, prot_max_temp, prot_min_rpm,
             prot_overvoltage, prot_undervoltage, prot_stall_current,
             prot_startup_grace, prot_fault_trip_count, prot_vibration_ack_grace,
-            
+
             maint_next_time, maint_total_hours, maint_hours_limit,
             maint_total_seconds, maint_limit_seconds
         ) VALUES (
@@ -47,10 +105,10 @@ async def receive_data(
             :voltage, :current, :power, :power_factor, :energy, :frequency,
             :temp1, :temp2, :accel_x, :accel_y, :accel_z, :tap,
             :f_oc, :f_ot, :f_stall, :f_vib, :f_ov, :f_uv,
-            
+
             :p_max_c, :p_max_t, :p_min_rpm, :p_ov, :p_uv, :p_stall_c,
             :p_sg, :p_ftc, :p_vag,
-            
+
             :m_next, :m_th, :m_hl, :m_ts, :m_ls
         )
     """), {
@@ -77,7 +135,6 @@ async def receive_data(
         "f_vib": payload.faults.vibration,
         "f_ov": payload.faults.overvoltage,
         "f_uv": payload.faults.undervoltage,
-        
         "p_max_c": payload.protection.maxCurrentA,
         "p_max_t": payload.protection.maxTempC,
         "p_min_rpm": payload.protection.minRpm,
@@ -87,7 +144,6 @@ async def receive_data(
         "p_sg": payload.protection.startupGraceMs,
         "p_ftc": payload.protection.faultTripCount,
         "p_vag": payload.protection.vibrationAckGraceMs,
-        
         "m_next": payload.maintenance.nextMaintenanceTime,
         "m_th": payload.maintenance.totalLifeCycleHours,
         "m_hl": payload.maintenance.maintenanceHoursLimit,
@@ -113,280 +169,12 @@ async def receive_data(
             VALUES (:device_id, :fault_type)
         """), {"device_id": payload.deviceId, "fault_type": fault})
 
-    # Run Advanced ML predictions with configurable options
-    prediction_mode = getattr(settings, 'prediction_mode', 'advanced')  # 'basic', 'ml', 'advanced'
-    
+    # Run ML predictions
+    prediction_mode = getattr(settings, 'prediction_mode', 'advanced')
     if prediction_mode == 'advanced':
         predictions = await run_advanced_ml_predictions(payload, db)
     elif prediction_mode == 'ml':
         predictions = await run_ml_predictions(payload, db)
-    else:
-        predictions = run_predictions(payload)  # Basic rule-based
-    
-    for p in predictions:
-        await db.execute(text("""
-            INSERT INTO predictions (device_id, prediction_type, confidence, severity, details)
-            VALUES (:device_id, :type, :confidence, :severity, :details)
-        """), {
-            "device_id": payload.deviceId,
-            "type": p["type"],
-            "confidence": p["confidence"],
-            "severity": p["severity"],
-            "details": json.dumps(p["details"])
-        })
-
-    await db.commit()
-    return {"ok": True}
-
-
-@router.get("/data/{device_id}")
-async def get_readings(
-    device_id: str,
-    limit: int = 100,
-    db: AsyncSession = Depends(get_db),
-    _: None = Depends(verify_api_key)
-):
-    result = await db.execute(text("""
-        SELECT * FROM sensor_readings
-        WHERE device_id = :device_id
-        ORDER BY ts DESC LIMIT :limit
-    """), {"device_id": device_id, "limit": limit})
-    rows = result.mappings().all()
-    return {"data": [dict(r) for r in rows]}
-
-@router.post("/ai/analyze/{device_id}")
-async def analyze_with_ai(
-    device_id: str,
-    db: AsyncSession = Depends(get_db),
-    _: None = Depends(verify_api_key)
-):
-    """On-demand Cloud AI analysis (Mistral, Gemini, Groq)"""
-    # Enforce 30-second per-device cooldown
-    now = time.time()
-    last_call = _last_gemini_call.get(device_id, 0)
-    wait = _GEMINI_COOLDOWN_SECONDS - (now - last_call)
-    if wait > 0:
-        return {
-            "success": False,
-            "analysis": None,
-            "message": f"Please wait {int(wait)} more second(s) before requesting another AI analysis for this device."
-        }
-    _last_gemini_call[device_id] = now
-
-    # Get latest sensor data for this device
-    result = await db.execute(text("""
-        SELECT * FROM sensor_readings
-        WHERE device_id = :device_id
-        ORDER BY ts DESC LIMIT 1
-    """), {"device_id": device_id})
-    row = result.mappings().first()
-    
-    if not row:
-        raise HTTPException(status_code=404, detail="No sensor data found for device")
-    
-    # Reconstruct payload from database row using the actual schema model names
-    from app.schemas import (
-        FaultsData,
-        MaintenanceData,
-        MotorData,
-        PowerData,
-        ProtectionData,
-        SensorPayload,
-        TemperatureData,
-        VibrationData,
-    )
-    
-    payload = SensorPayload(
-        deviceId=device_id,
-        motor=MotorData(
-            running=row['motor_running'],
-            rpm=row['rpm'],
-            pulse=row['pulse'],
-            uptime=row['uptime_seconds']
-        ),
-        power=PowerData(
-            voltage=row['voltage'],
-            current=row['current'],
-            power=row['power'],
-            powerFactor=row['power_factor'],
-            energy=row['energy'],
-            frequency=row['frequency']
-        ),
-        temperature=TemperatureData(
-            t1=row['temp1'],
-            t2=row['temp2']
-        ),
-        vibration=VibrationData(
-            x=row['accel_x'],
-            y=row['accel_y'],
-            z=row['accel_z'],
-            tap=row['tap_detected']
-        ),
-        faults=FaultsData(
-            overcurrent=row['fault_overcurrent'],
-            overtemp=row['fault_overtemp'],
-            stall=row['fault_stall'],
-            vibration=row['fault_vibration'],
-            overvoltage=row['fault_overvoltage'],
-            undervoltage=row['fault_undervoltage']
-        ),
-        protection=ProtectionData(
-            maxCurrentA=row['prot_max_current'],
-            maxTempC=row['prot_max_temp'],
-            minRpm=row['prot_min_rpm'],
-            overvoltageV=row['prot_overvoltage'],
-            undervoltageV=row['prot_undervoltage'],
-            stallCurrentA=row['prot_stall_current'],
-            startupGraceMs=row['prot_startup_grace'],
-            faultTripCount=row['prot_fault_trip_count'],
-            vibrationAckGraceMs=row['prot_vibration_ack_grace']
-        ),
-        maintenance=MaintenanceData(
-            nextMaintenanceTime=row['maint_next_time'],
-            totalLifeCycleHours=row['maint_total_hours'],
-            maintenanceHoursLimit=row['maint_hours_limit'],
-            totalLifeCycleSeconds=row['maint_total_seconds'],
-            maintenanceHoursLimitSeconds=row['maint_limit_seconds']
-        ),
-        uptime=row['uptime_seconds']
-    )
-    
-    # Call AI service (now handles Mistral -> Gemini -> Groq fallback)
-    ai_result = await advanced_ml_prediction_service.get_ai_analysis(payload, db)
-    
-    if ai_result:
-        # Store the AI analysis as a prediction
-        await db.execute(text("""
-            INSERT INTO predictions (device_id, prediction_type, confidence, severity, details)
-            VALUES (:device_id, :type, :confidence, :severity, :details)
-        """), {
-            "device_id": device_id,
-            "type": ai_result["type"],
-            "confidence": ai_result["confidence"],
-            "severity": ai_result["severity"],
-            "details": json.dumps(ai_result["details"])
-        })
-        await db.commit()
-        
-        return {
-            "success": True,
-            "analysis": ai_result,
-            "message": "AI analysis completed and stored"
-        }
-    else:
-        ai_error = getattr(advanced_ml_prediction_service, 'last_ai_error', '') or 'AI analysis failed or is not configured.'
-        return {
-            "success": False,
-            "analysis": None,
-            "message": ai_error
-        }
-
-
-class AIModeRequest(BaseModel):
-    mode: str  # 'commentary' or 'prediction'
-
-@router.post("/ai/mode")
-async def set_ai_mode(
-    body: AIModeRequest,
-    _: None = Depends(verify_api_key)
-):
-    """Change the AI analysis mode at runtime without restarting the server."""
-    if body.mode not in ('commentary', 'prediction', 'disabled'):
-        raise HTTPException(status_code=400, detail="mode must be 'commentary', 'prediction', or 'disabled'")
-    advanced_ml_prediction_service.gemini_mode = body.mode
-    if hasattr(ml_prediction_service, 'gemini_mode'):
-        ml_prediction_service.gemini_mode = body.mode
-    return {"success": True, "mode": body.mode, "message": f"AI mode updated to '{body.mode}'"}
-
-@router.post("/ai/local-analyze/{device_id}")
-async def analyze_with_local_models(
-    device_id: str,
-    db: AsyncSession = Depends(get_db),
-    _: None = Depends(verify_api_key)
-):
-    """On-demand trigger for local ML models (Isolation Forest, RUL, etc.)"""
-    # Get latest sensor data for this device
-    result = await db.execute(text("""
-        SELECT * FROM sensor_readings
-        WHERE device_id = :device_id
-        ORDER BY ts DESC LIMIT 1
-    """), {"device_id": device_id})
-    row = result.mappings().first()
-    
-    if not row:
-        raise HTTPException(status_code=404, detail="No sensor data found for device")
-    
-    from app.schemas import (
-        FaultsData, MaintenanceData, MotorData, PowerData,
-        ProtectionData, SensorPayload, TemperatureData, VibrationData,
-    )
-    
-    payload = SensorPayload(
-        deviceId=device_id,
-        motor=MotorData(
-            running=row['motor_running'],
-            rpm=row['rpm'],
-            pulse=row['pulse'],
-            uptime=row['uptime_seconds']
-        ),
-        power=PowerData(
-            voltage=row['voltage'],
-            current=row['current'],
-            power=row['power'],
-            powerFactor=row['power_factor'],
-            energy=row['energy'],
-            frequency=row['frequency']
-        ),
-        temperature=TemperatureData(
-            t1=row['temp1'],
-            t2=row['temp2']
-        ),
-        vibration=VibrationData(
-            x=row['accel_x'],
-            y=row['accel_y'],
-            z=row['accel_z'],
-            tap=row['tap_detected']
-        ),
-        faults=FaultsData(
-            overcurrent=row['fault_overcurrent'],
-            overtemp=row['fault_overtemp'],
-            stall=row['fault_stall'],
-            vibration=row['fault_vibration'],
-            overvoltage=row['fault_overvoltage'],
-            undervoltage=row['fault_undervoltage']
-        ),
-        protection=ProtectionData(
-            maxCurrentA=row['prot_max_current'],
-            maxTempC=row['prot_max_temp'],
-            minRpm=row['prot_min_rpm'],
-            overvoltageV=row['prot_overvoltage'],
-            undervoltageV=row['prot_undervoltage'],
-            stallCurrentA=row['prot_stall_current'],
-            startupGraceMs=row['prot_startup_grace'],
-            faultTripCount=row['prot_fault_trip_count'],
-            vibrationAckGraceMs=row['prot_vibration_ack_grace']
-        ),
-        maintenance=MaintenanceData(
-            nextMaintenanceTime=row['maint_next_time'],
-            totalLifeCycleHours=row['maint_total_hours'],
-            maintenanceHoursLimit=row['maint_hours_limit'],
-            totalLifeCycleSeconds=row['maint_total_seconds'],
-            maintenanceHoursLimitSeconds=row['maint_limit_seconds']
-        ),
-        uptime=row['uptime_seconds']
-    )
-
-    from app.services import advanced_ml_prediction as advanced_ml_prediction_service
-    from app.services import ml_prediction as ml_prediction_service
-    from app.services.prediction import run_predictions
-    import json
-
-    prediction_mode = getattr(settings, 'prediction_mode', 'advanced')
-    
-    if prediction_mode == 'advanced':
-        predictions = await advanced_ml_prediction_service.run_advanced_ml_predictions(payload, db)
-    elif prediction_mode == 'ml':
-        predictions = await ml_prediction_service.run_ml_predictions(payload, db)
     else:
         predictions = run_predictions(payload)
 
@@ -399,7 +187,227 @@ async def analyze_with_local_models(
             "type": p["type"],
             "confidence": p["confidence"],
             "severity": p["severity"],
-            "details": json.dumps(p["details"])
+            "details": json.dumps(p["details"]),
+        })
+
+    # ── Auto-cleanup: prevent unbounded table growth ──────────────────────────
+    await db.execute(text("""
+        DELETE FROM predictions
+        WHERE device_id = :device_id
+          AND ts < NOW() - INTERVAL '7 days'
+    """), {"device_id": payload.deviceId})
+
+    await db.execute(text("""
+        DELETE FROM sensor_readings
+        WHERE device_id = :device_id
+          AND ts < NOW() - INTERVAL '30 days'
+    """), {"device_id": payload.deviceId})
+    # ─────────────────────────────────────────────────────────────────────────
+
+    await db.commit()
+    return {"ok": True}
+
+
+# ── GET /data/{device_id} ────────────────────────────────────────────────────
+@router.get("/data/{device_id}")
+async def get_readings(
+    device_id: str,
+    limit: int = 100,
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(verify_api_key),
+):
+    result = await db.execute(text("""
+        SELECT id, device_id, ts,
+               motor_running, rpm, pulse, uptime_seconds,
+               voltage, current, power, power_factor, energy, frequency,
+               temp1, temp2,
+               accel_x, accel_y, accel_z, tap_detected,
+               fault_overcurrent, fault_overtemp, fault_stall,
+               fault_vibration, fault_overvoltage, fault_undervoltage,
+               prot_max_current, prot_max_temp, prot_min_rpm
+        FROM sensor_readings
+        WHERE device_id = :device_id
+        ORDER BY ts DESC LIMIT :limit
+    """), {"device_id": device_id, "limit": limit})
+    rows = result.mappings().all()
+    return {"data": [dict(r) for r in rows]}
+
+
+# ── POST /ai/analyze/{device_id} ─────────────────────────────────────────────
+@router.post("/ai/analyze/{device_id}")
+async def analyze_with_ai(
+    device_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(verify_api_key),
+):
+    """On-demand Cloud AI analysis (Mistral → Gemini → Groq) with DB-backed cooldown."""
+
+    # ── DB-backed cooldown (survives server restarts) ─────────────────────────
+    cooldown_res = await db.execute(text("""
+        SELECT last_ai_analysis_at FROM devices WHERE id = :device_id
+    """), {"device_id": device_id})
+    device_row = cooldown_res.mappings().first()
+
+    if device_row and device_row['last_ai_analysis_at']:
+        last_call = device_row['last_ai_analysis_at']
+        now = datetime.now(timezone.utc)
+        if last_call.tzinfo is None:
+            last_call = last_call.replace(tzinfo=timezone.utc)
+        elapsed = (now - last_call).total_seconds()
+        if elapsed < _GEMINI_COOLDOWN_SECONDS:
+            wait = int(_GEMINI_COOLDOWN_SECONDS - elapsed)
+            return {
+                "success": False,
+                "analysis": None,
+                "message": f"Please wait {wait} more second(s) before requesting another AI analysis for this device.",
+            }
+
+    # Mark cooldown start (upsert so it works even if device row is missing)
+    await db.execute(text("""
+        INSERT INTO devices (id, name, last_seen_at, updated_at, is_active, last_ai_analysis_at)
+        VALUES (:device_id, :device_id, NOW(), NOW(), TRUE, NOW())
+        ON CONFLICT (id) DO UPDATE SET last_ai_analysis_at = NOW()
+    """), {"device_id": device_id})
+    await db.commit()
+    # ─────────────────────────────────────────────────────────────────────────
+
+    # Get latest sensor reading
+    result = await db.execute(text("""
+        SELECT * FROM sensor_readings
+        WHERE device_id = :device_id
+        ORDER BY ts DESC LIMIT 1
+    """), {"device_id": device_id})
+    row = result.mappings().first()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="No sensor data found for device")
+
+    payload = _row_to_payload(device_id, row)
+
+    # Call AI service (Mistral → Gemini → Groq fallback)
+    ai_result = await advanced_ml_prediction_service.get_ai_analysis(payload, db)
+
+    if ai_result:
+        await db.execute(text("""
+            INSERT INTO predictions (device_id, prediction_type, confidence, severity, details)
+            VALUES (:device_id, :type, :confidence, :severity, :details)
+        """), {
+            "device_id": device_id,
+            "type": ai_result["type"],
+            "confidence": ai_result["confidence"],
+            "severity": ai_result["severity"],
+            "details": json.dumps(ai_result["details"]),
+        })
+        await db.commit()
+        return {"success": True, "analysis": ai_result, "message": "AI analysis completed and stored"}
+    else:
+        ai_error = getattr(advanced_ml_prediction_service, 'last_ai_error', '') or 'AI analysis failed or is not configured.'
+        return {"success": False, "analysis": None, "message": ai_error}
+
+
+# ── GET /ai/latest/{device_id} ───────────────────────────────────────────────
+@router.get("/ai/latest/{device_id}")
+async def get_latest_ai_result(
+    device_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(verify_api_key),
+):
+    """Return the latest commentary AND latest prediction for a device separately."""
+
+    def _parse_row(row):
+        if not row:
+            return None
+        r = dict(row)
+        if isinstance(r.get('details'), str):
+            try:
+                r['details'] = json.loads(r['details'])
+            except Exception:
+                pass
+        return r
+
+    commentary_res = await db.execute(text("""
+        SELECT id, device_id, prediction_type, confidence, severity, details,
+               ts AS predicted_at
+        FROM predictions
+        WHERE device_id = :device_id AND prediction_type = 'ai_comment'
+        ORDER BY ts DESC LIMIT 1
+    """), {"device_id": device_id})
+
+    prediction_res = await db.execute(text("""
+        SELECT id, device_id, prediction_type, confidence, severity, details,
+               ts AS predicted_at
+        FROM predictions
+        WHERE device_id = :device_id AND prediction_type = 'ai_analysis'
+        ORDER BY ts DESC LIMIT 1
+    """), {"device_id": device_id})
+
+    return {
+        "commentary": _parse_row(commentary_res.mappings().first()),
+        "prediction": _parse_row(prediction_res.mappings().first()),
+    }
+
+
+# ── POST /ai/mode ─────────────────────────────────────────────────────────────
+class AIModeRequest(BaseModel):
+    mode: str  # 'commentary' | 'prediction' | 'disabled'
+
+
+@router.post("/ai/mode")
+async def set_ai_mode(
+    body: AIModeRequest,
+    _: None = Depends(verify_api_key),
+):
+    """Change the AI analysis mode at runtime without restarting the server."""
+    if body.mode not in ('commentary', 'prediction', 'disabled'):
+        raise HTTPException(status_code=400, detail="mode must be 'commentary', 'prediction', or 'disabled'")
+    advanced_ml_prediction_service.gemini_mode = body.mode
+    if hasattr(ml_prediction_service, 'gemini_mode'):
+        ml_prediction_service.gemini_mode = body.mode
+    return {"success": True, "mode": body.mode, "message": f"AI mode updated to '{body.mode}'"}
+
+
+# ── POST /ai/local-analyze/{device_id} ───────────────────────────────────────
+@router.post("/ai/local-analyze/{device_id}")
+async def analyze_with_local_models(
+    device_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(verify_api_key),
+):
+    """On-demand trigger for local ML models (Isolation Forest, RUL, etc.)"""
+    result = await db.execute(text("""
+        SELECT * FROM sensor_readings
+        WHERE device_id = :device_id
+        ORDER BY ts DESC LIMIT 1
+    """), {"device_id": device_id})
+    row = result.mappings().first()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="No sensor data found for device")
+
+    payload = _row_to_payload(device_id, row)
+
+    from app.services import advanced_ml_prediction as adv_module
+    from app.services import ml_prediction as ml_module
+    from app.services.prediction import run_predictions as run_basic
+
+    prediction_mode = getattr(settings, 'prediction_mode', 'advanced')
+    if prediction_mode == 'advanced':
+        predictions = await adv_module.run_advanced_ml_predictions(payload, db)
+    elif prediction_mode == 'ml':
+        predictions = await ml_module.run_ml_predictions(payload, db)
+    else:
+        predictions = run_basic(payload)
+
+    for p in predictions:
+        await db.execute(text("""
+            INSERT INTO predictions (device_id, prediction_type, confidence, severity, details)
+            VALUES (:device_id, :type, :confidence, :severity, :details)
+        """), {
+            "device_id": payload.deviceId,
+            "type": p["type"],
+            "confidence": p["confidence"],
+            "severity": p["severity"],
+            "details": json.dumps(p["details"]),
         })
     await db.commit()
     return {"success": True, "generated": len(predictions), "message": f"Successfully ran {len(predictions)} local models."}

@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers import data, faults, predictions, forecast, devices
-from app.database import engine, Base
+from app.database import engine, Base, settings
 
 app = FastAPI(title="ESP32 Motor Monitor API")
 
@@ -10,7 +10,7 @@ app = FastAPI(title="ESP32 Motor Monitor API")
 # For now, allowing all origins (restrict in production for security)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[settings.frontend_url] if settings.frontend_url != "*" else ["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

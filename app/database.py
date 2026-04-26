@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     groq_api_key: str = ""    # Groq API key (optional)
     gemini_mode: str = "commentary"  # Options: 'disabled', 'commentary', 'prediction'
     prediction_mode: str = "advanced"  # Options: 'basic', 'ml', 'advanced'
+    # Set to your Vercel URL in production, e.g. https://your-app.vercel.app
+    frontend_url: str = "*"
     class Config:
         env_file = ".env"
 
