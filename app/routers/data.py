@@ -161,15 +161,6 @@ async def receive_data(
     db: AsyncSession = Depends(get_db),
     _: None = Depends(verify_api_key),
 ):
-    # Check if device exists and is active - reject data from disabled devices
-    device_check = await db.execute(text("""
-        SELECT is_active FROM devices WHERE id = :device_id
-    """), {"device_id": payload.deviceId})
-    device_row = device_check.mappings().first()
-
-    if device_row and device_row['is_active'] is False:
-        raise HTTPException(status_code=403, detail="Device is disabled. Data rejected.")
-
     previous_faults = await db.execute(text("""
         SELECT fault_overcurrent, fault_overtemp, fault_stall,
                fault_vibration, fault_overvoltage, fault_undervoltage
@@ -246,13 +237,14 @@ async def receive_data(
         "m_ls": payload.maintenance.maintenanceHoursLimitSeconds,
     })
 
-    # Update device heartbeat (last_seen_at) - preserve is_active state (don't force TRUE)
+    # Update device heartbeat (last_seen_at)
     await db.execute(text("""
         INSERT INTO devices (id, name, last_seen_at, updated_at, is_active)
         VALUES (:device_id, :device_id, NOW(), NOW(), TRUE)
         ON CONFLICT (id) DO UPDATE SET
             last_seen_at = NOW(),
-            updated_at = NOW()
+            updated_at = NOW(),
+            is_active = TRUE
     """), {"device_id": payload.deviceId})
 
     # Log new fault activations only, so ongoing faults don't spam the history.
