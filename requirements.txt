@@ -11,3 +11,6 @@ scikit-learn
 scipy
 mistralai
 groq
+bcrypt
+python-jose[cryptography]
+python-multipart

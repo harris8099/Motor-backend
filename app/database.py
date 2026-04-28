@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     prediction_mode: str = "advanced"  # Options: 'basic', 'ml', 'advanced'
     # Set to your Vercel URL in production, e.g. https://your-app.vercel.app
     frontend_url: str = "*"
+    jwt_secret: str = "change-me-in-production"  # JWT secret for auth tokens
     class Config:
         env_file = ".env"
 
