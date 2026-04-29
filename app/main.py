@@ -41,6 +41,54 @@ async def ensure_schema_columns():
             ALTER TABLE devices
             ADD COLUMN IF NOT EXISTS last_ai_analysis_at TIMESTAMPTZ
         """))
+        # Create fault_logs table
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS fault_logs (
+                id SERIAL PRIMARY KEY,
+                device_id VARCHAR(64) NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+                fault_type VARCHAR(32) NOT NULL,
+                severity VARCHAR(16) NOT NULL CHECK (severity IN ('critical', 'warning', 'info')),
+                status VARCHAR(16) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'resolved')),
+                message TEXT,
+                detected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                resolved_at TIMESTAMPTZ,
+                resolved_by VARCHAR(128),
+                root_cause VARCHAR(32),
+                actions_taken TEXT,
+                parts_replaced TEXT,
+                resolution_notes TEXT,
+                sensor_reading_id INTEGER
+            )
+        """))
+        # Create indexes separately
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_fault_logs_device_active 
+            ON fault_logs(device_id, status) WHERE status = 'active'
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_fault_logs_detected_at 
+            ON fault_logs(detected_at DESC)
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_fault_logs_severity 
+            ON fault_logs(severity) WHERE status = 'active'
+        """))
+        # Create commands table for remote device commands
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS commands (
+                id          SERIAL PRIMARY KEY,
+                device_id   VARCHAR(64) NOT NULL,
+                command     VARCHAR(32) NOT NULL,
+                payload     JSONB,
+                status      VARCHAR(16) NOT NULL DEFAULT 'pending',
+                created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                acked_at    TIMESTAMPTZ
+            )
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_commands_device_pending
+            ON commands(device_id, status, created_at)
+        """))
 
 @app.get("/health")
 async def health():

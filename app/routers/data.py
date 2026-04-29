@@ -13,6 +13,7 @@ from app.schemas import (
 from app.services.prediction import run_predictions
 from app.services.ml_prediction import run_ml_predictions, ml_prediction_service
 from app.services.advanced_ml_prediction import run_advanced_ml_predictions, advanced_ml_prediction_service
+from app.routers.faults import detect_and_log_fault
 import json
 import numpy as np
 from pydantic import BaseModel
@@ -247,7 +248,17 @@ async def receive_data(
             is_active = TRUE
     """), {"device_id": payload.deviceId})
 
-    # Log new fault activations only, so ongoing faults don't spam the history.
+    # Get the ID of the inserted reading for fault logging reference
+    reading_result = await db.execute(text("""
+        SELECT id FROM sensor_readings
+        WHERE device_id = :device_id
+        ORDER BY ts DESC
+        LIMIT 1
+    """), {"device_id": payload.deviceId})
+    reading_row = reading_result.mappings().first()
+    reading_id = reading_row["id"] if reading_row else None
+
+    # Log new fault activations using the enhanced fault system
     current_faults = payload.faults.model_dump()
     previous_faults = {
         key.replace("fault_", ""): bool(previous_fault_row[key]) if previous_fault_row else False
@@ -266,11 +277,9 @@ async def receive_data(
         if is_active and not previous_faults.get(fault_name, False)
     ]
 
-    for fault in activated_faults:
-        await db.execute(text("""
-            INSERT INTO fault_events (device_id, fault_type)
-            VALUES (:device_id, :fault_type)
-        """), {"device_id": payload.deviceId, "fault_type": fault})
+    # Use the new detect_and_log_fault function for each activated fault
+    for fault_type in activated_faults:
+        await detect_and_log_fault(db, payload.deviceId, fault_type, reading_id)
 
     # Run ML predictions
     prediction_mode = getattr(settings, 'prediction_mode', 'advanced')
@@ -537,3 +546,83 @@ async def analyze_with_local_models(
         })
     await db.commit()
     return {"success": True, "generated": len(predictions), "message": f"Successfully ran {len(predictions)} local models."}
+
+
+# ── POST /command/{device_id}/ack_faults ──────────────────────────────────────
+@router.post("/command/{device_id}/ack_faults")
+async def cmd_ack_faults(
+    device_id: str,
+    body: dict = {},
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(verify_api_key),
+):
+    """Queue an ack_faults command for the device. body may contain {faults: ['overcurrent', ...]}."""
+    await db.execute(text("""
+        INSERT INTO commands (device_id, command, payload)
+        VALUES (:did, 'ack_faults', :payload)
+    """), {"did": device_id, "payload": json.dumps(body)})
+    await db.commit()
+    return {"ok": True}
+
+
+# ── POST /command/{device_id}/set_protection ──────────────────────────────────
+@router.post("/command/{device_id}/set_protection")
+async def cmd_set_protection(
+    device_id: str,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(verify_api_key),
+):
+    """Queue a set_protection command with updated threshold values."""
+    await db.execute(text("""
+        INSERT INTO commands (device_id, command, payload)
+        VALUES (:did, 'set_protection', :payload)
+    """), {"did": device_id, "payload": json.dumps(body)})
+    await db.commit()
+    return {"ok": True}
+
+
+# ── GET /command/{device_id}/pending ─────────────────────────────────────────
+@router.get("/command/{device_id}/pending")
+async def cmd_get_pending(
+    device_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(verify_api_key),
+):
+    """Return the oldest pending command for this device (used by ESP32 poll)."""
+    # Auto-expire commands older than 5 minutes
+    await db.execute(text("""
+        UPDATE commands SET status='expired'
+        WHERE device_id=:did AND status='pending'
+        AND created_at < NOW() - INTERVAL '5 minutes'
+    """), {"did": device_id})
+    await db.commit()
+
+    result = await db.execute(text("""
+        SELECT id, command, payload FROM commands
+        WHERE device_id=:did AND status='pending'
+        ORDER BY created_at ASC LIMIT 1
+    """), {"did": device_id})
+    row = result.mappings().first()
+
+    if not row:
+        return {"command": None}
+
+    return {"id": row["id"], "command": row["command"], "payload": row["payload"]}
+
+
+# ── POST /command/{device_id}/done ────────────────────────────────────────────
+@router.post("/command/{device_id}/done")
+async def cmd_done(
+    device_id: str,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(verify_api_key),
+):
+    """Mark a command as acknowledged by the device."""
+    await db.execute(text("""
+        UPDATE commands SET status='acked', acked_at=NOW()
+        WHERE id=:id AND device_id=:did AND status='pending'
+    """), {"id": body["id"], "did": device_id})
+    await db.commit()
+    return {"ok": True}
