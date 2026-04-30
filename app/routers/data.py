@@ -1,5 +1,5 @@
 from datetime import datetime, timezone, timedelta
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException, Header, Body
 
 # India timezone (IST = UTC+5:30)
 INDIA_TZ = timezone(timedelta(hours=5, minutes=30))
@@ -9,6 +9,8 @@ from app.database import get_db, settings
 from app.schemas import (
     SensorPayload, FaultsData, MaintenanceData, MotorData,
     PowerData, ProtectionData, TemperatureData, VibrationData,
+    AckFaultsCommand, SetProtectionCommand, SetMaintenanceCommand,
+    SetRuntimeCommand, EmptyCommand,
 )
 from app.services.prediction import run_predictions
 from app.services.ml_prediction import run_ml_predictions, ml_prediction_service
@@ -16,7 +18,7 @@ from app.services.advanced_ml_prediction import run_advanced_ml_predictions, adv
 from app.routers.faults import detect_and_log_fault
 import json
 import numpy as np
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 
 # ── Custom JSON encoder to handle numpy types from sklearn/numpy ──────────────
@@ -552,7 +554,7 @@ async def analyze_with_local_models(
 @router.post("/command/{device_id}/ack_faults")
 async def cmd_ack_faults(
     device_id: str,
-    body: dict = {},
+    body: AckFaultsCommand = Body(default_factory=AckFaultsCommand),
     db: AsyncSession = Depends(get_db),
     _: None = Depends(verify_api_key),
 ):
@@ -560,7 +562,7 @@ async def cmd_ack_faults(
     await db.execute(text("""
         INSERT INTO commands (device_id, command, payload)
         VALUES (:did, 'ack_faults', :payload)
-    """), {"did": device_id, "payload": json.dumps(body)})
+    """), {"did": device_id, "payload": body.model_dump_json(exclude_none=True)})
     await db.commit()
     return {"ok": True}
 
@@ -569,7 +571,7 @@ async def cmd_ack_faults(
 @router.post("/command/{device_id}/set_protection")
 async def cmd_set_protection(
     device_id: str,
-    body: dict,
+    body: SetProtectionCommand,
     db: AsyncSession = Depends(get_db),
     _: None = Depends(verify_api_key),
 ):
@@ -577,7 +579,7 @@ async def cmd_set_protection(
     await db.execute(text("""
         INSERT INTO commands (device_id, command, payload)
         VALUES (:did, 'set_protection', :payload)
-    """), {"did": device_id, "payload": json.dumps(body)})
+    """), {"did": device_id, "payload": body.model_dump_json(exclude_none=True)})
     await db.commit()
     return {"ok": True}
 
@@ -585,7 +587,7 @@ async def cmd_set_protection(
 @router.post("/command/{device_id}/set_maintenance")
 async def cmd_set_maintenance(
     device_id: str,
-    body: dict,
+    body: SetMaintenanceCommand,
     db: AsyncSession = Depends(get_db),
     _: None = Depends(verify_api_key),
 ):
@@ -593,7 +595,7 @@ async def cmd_set_maintenance(
     await db.execute(text("""
         INSERT INTO commands (device_id, command, payload)
         VALUES (:did, 'set_maintenance', :payload)
-    """), {"did": device_id, "payload": json.dumps(body)})
+    """), {"did": device_id, "payload": body.model_dump_json(exclude_none=True)})
     await db.commit()
     return {"ok": True}
 
@@ -601,7 +603,7 @@ async def cmd_set_maintenance(
 @router.post("/command/{device_id}/set_runtime")
 async def cmd_set_runtime(
     device_id: str,
-    body: dict,
+    body: SetRuntimeCommand,
     db: AsyncSession = Depends(get_db),
     _: None = Depends(verify_api_key),
 ):
@@ -609,7 +611,7 @@ async def cmd_set_runtime(
     await db.execute(text("""
         INSERT INTO commands (device_id, command, payload)
         VALUES (:did, 'set_runtime', :payload)
-    """), {"did": device_id, "payload": json.dumps(body)})
+    """), {"did": device_id, "payload": body.model_dump_json(exclude_none=True)})
     await db.commit()
     return {"ok": True}
 
@@ -617,7 +619,7 @@ async def cmd_set_runtime(
 @router.post("/command/{device_id}/reset_energy")
 async def cmd_reset_energy(
     device_id: str,
-    body: dict = {},
+    body: EmptyCommand = Body(default_factory=EmptyCommand),
     db: AsyncSession = Depends(get_db),
     _: None = Depends(verify_api_key),
 ):
@@ -625,7 +627,7 @@ async def cmd_reset_energy(
     await db.execute(text("""
         INSERT INTO commands (device_id, command, payload)
         VALUES (:did, 'reset_energy', :payload)
-    """), {"did": device_id, "payload": json.dumps(body)})
+    """), {"did": device_id, "payload": body.model_dump_json(exclude_none=True)})
     await db.commit()
     return {"ok": True}
 
@@ -633,7 +635,7 @@ async def cmd_reset_energy(
 @router.post("/command/{device_id}/reset_power")
 async def cmd_reset_power(
     device_id: str,
-    body: dict = {},
+    body: EmptyCommand = Body(default_factory=EmptyCommand),
     db: AsyncSession = Depends(get_db),
     _: None = Depends(verify_api_key),
 ):
@@ -641,7 +643,7 @@ async def cmd_reset_power(
     await db.execute(text("""
         INSERT INTO commands (device_id, command, payload)
         VALUES (:did, 'reset_power', :payload)
-    """), {"did": device_id, "payload": json.dumps(body)})
+    """), {"did": device_id, "payload": body.model_dump_json(exclude_none=True)})
     await db.commit()
     return {"ok": True}
 
@@ -649,7 +651,7 @@ async def cmd_reset_power(
 @router.post("/command/{device_id}/clear_maintenance")
 async def cmd_clear_maintenance(
     device_id: str,
-    body: dict = {},
+    body: EmptyCommand = Body(default_factory=EmptyCommand),
     db: AsyncSession = Depends(get_db),
     _: None = Depends(verify_api_key),
 ):
@@ -657,7 +659,7 @@ async def cmd_clear_maintenance(
     await db.execute(text("""
         INSERT INTO commands (device_id, command, payload)
         VALUES (:did, 'clear_maintenance', :payload)
-    """), {"did": device_id, "payload": json.dumps(body)})
+    """), {"did": device_id, "payload": body.model_dump_json(exclude_none=True)})
     await db.commit()
     return {"ok": True}
 
@@ -678,24 +680,59 @@ async def cmd_get_pending(
     """), {"did": device_id})
     await db.commit()
 
-    result = await db.execute(text("""
-        SELECT id, command, payload FROM commands
-        WHERE device_id=:did AND status='pending'
-        ORDER BY created_at ASC LIMIT 1
-    """), {"did": device_id})
-    row = result.mappings().first()
+    validator_map = {
+        "ack_faults": AckFaultsCommand,
+        "set_protection": SetProtectionCommand,
+        "set_maintenance": SetMaintenanceCommand,
+        "set_runtime": SetRuntimeCommand,
+        "reset_energy": EmptyCommand,
+        "reset_power": EmptyCommand,
+        "clear_maintenance": EmptyCommand,
+    }
 
-    if not row:
-        return {"command": None}
+    while True:
+        result = await db.execute(text("""
+            SELECT id, command, payload FROM commands
+            WHERE device_id=:did AND status='pending'
+            ORDER BY created_at ASC LIMIT 1
+        """), {"did": device_id})
+        row = result.mappings().first()
 
-    payload = row["payload"]
-    if isinstance(payload, str):
+        if not row:
+            return {"command": None}
+
+        command = row["command"]
+        payload = row["payload"]
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except json.JSONDecodeError:
+                payload = None
+
+        validator = validator_map.get(command)
+        if validator is None or (payload is not None and not isinstance(payload, dict)):
+            await db.execute(text("""
+                UPDATE commands SET status='failed', acked_at=NOW()
+                WHERE id=:id AND device_id=:did AND status='pending'
+            """), {"id": row["id"], "did": device_id})
+            await db.commit()
+            continue
+
         try:
-            payload = json.loads(payload)
-        except json.JSONDecodeError:
-            pass
+            validated = validator.model_validate(payload or {})
+        except ValidationError:
+            await db.execute(text("""
+                UPDATE commands SET status='failed', acked_at=NOW()
+                WHERE id=:id AND device_id=:did AND status='pending'
+            """), {"id": row["id"], "did": device_id})
+            await db.commit()
+            continue
 
-    return {"id": row["id"], "command": row["command"], "payload": payload}
+        return {
+            "id": row["id"],
+            "command": command,
+            "payload": validated.model_dump(exclude_none=True),
+        }
 
 
 # ── POST /command/{device_id}/done ────────────────────────────────────────────
