@@ -95,6 +95,48 @@ def sanitize_for_json(obj):
 router = APIRouter()
 
 _GEMINI_COOLDOWN_SECONDS = 30
+_COMMAND_EXPIRY_INTERVAL = "5 minutes"
+_COMMAND_REPLACEMENT_GROUPS = {
+    "set_protection": ("set_protection",),
+    "set_maintenance": ("set_maintenance", "set_runtime", "clear_maintenance"),
+    "set_runtime": ("set_maintenance", "set_runtime", "clear_maintenance"),
+    "clear_maintenance": ("set_maintenance", "set_runtime", "clear_maintenance"),
+    "reset_energy": ("reset_energy", "reset_power"),
+    "reset_power": ("reset_energy", "reset_power"),
+}
+
+
+async def _queue_device_command(
+    db: AsyncSession,
+    device_id: str,
+    command: str,
+    payload_json: str,
+) -> dict:
+    replaced_commands = list(_COMMAND_REPLACEMENT_GROUPS.get(command, ()))
+    replaced_count = 0
+
+    if replaced_commands:
+        command_list_sql = ", ".join(f"'{name}'" for name in replaced_commands)
+        replaced_result = await db.execute(text(f"""
+            UPDATE commands
+            SET status='cancelled', acked_at=NOW()
+            WHERE device_id=:did
+              AND status='pending'
+              AND command IN ({command_list_sql})
+        """), {"did": device_id})
+        replaced_count = replaced_result.rowcount or 0
+
+    await db.execute(text("""
+        INSERT INTO commands (device_id, command, payload)
+        VALUES (:did, :command, :payload)
+    """), {"did": device_id, "command": command, "payload": payload_json})
+    await db.commit()
+
+    return {
+        "ok": True,
+        "replacedPendingCommands": replaced_count,
+        "replacementGroup": replaced_commands,
+    }
 
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
@@ -559,12 +601,12 @@ async def cmd_ack_faults(
     _: None = Depends(verify_api_key),
 ):
     """Queue an ack_faults command for the device. body may contain {faults: ['overcurrent', ...]}."""
-    await db.execute(text("""
-        INSERT INTO commands (device_id, command, payload)
-        VALUES (:did, 'ack_faults', :payload)
-    """), {"did": device_id, "payload": body.model_dump_json(exclude_none=True)})
-    await db.commit()
-    return {"ok": True}
+    return await _queue_device_command(
+        db,
+        device_id,
+        "ack_faults",
+        body.model_dump_json(exclude_none=True),
+    )
 
 
 # ── POST /command/{device_id}/set_protection ──────────────────────────────────
@@ -576,12 +618,12 @@ async def cmd_set_protection(
     _: None = Depends(verify_api_key),
 ):
     """Queue a set_protection command with updated threshold values."""
-    await db.execute(text("""
-        INSERT INTO commands (device_id, command, payload)
-        VALUES (:did, 'set_protection', :payload)
-    """), {"did": device_id, "payload": body.model_dump_json(exclude_none=True)})
-    await db.commit()
-    return {"ok": True}
+    return await _queue_device_command(
+        db,
+        device_id,
+        "set_protection",
+        body.model_dump_json(exclude_none=True),
+    )
 
 
 @router.post("/command/{device_id}/set_maintenance")
@@ -592,12 +634,12 @@ async def cmd_set_maintenance(
     _: None = Depends(verify_api_key),
 ):
     """Queue a set_maintenance command with maintenance and optional runtime values."""
-    await db.execute(text("""
-        INSERT INTO commands (device_id, command, payload)
-        VALUES (:did, 'set_maintenance', :payload)
-    """), {"did": device_id, "payload": body.model_dump_json(exclude_none=True)})
-    await db.commit()
-    return {"ok": True}
+    return await _queue_device_command(
+        db,
+        device_id,
+        "set_maintenance",
+        body.model_dump_json(exclude_none=True),
+    )
 
 
 @router.post("/command/{device_id}/set_runtime")
@@ -608,12 +650,12 @@ async def cmd_set_runtime(
     _: None = Depends(verify_api_key),
 ):
     """Queue a set_runtime command with uptimeSeconds."""
-    await db.execute(text("""
-        INSERT INTO commands (device_id, command, payload)
-        VALUES (:did, 'set_runtime', :payload)
-    """), {"did": device_id, "payload": body.model_dump_json(exclude_none=True)})
-    await db.commit()
-    return {"ok": True}
+    return await _queue_device_command(
+        db,
+        device_id,
+        "set_runtime",
+        body.model_dump_json(exclude_none=True),
+    )
 
 
 @router.post("/command/{device_id}/reset_energy")
@@ -624,12 +666,12 @@ async def cmd_reset_energy(
     _: None = Depends(verify_api_key),
 ):
     """Queue a reset_energy command for the device."""
-    await db.execute(text("""
-        INSERT INTO commands (device_id, command, payload)
-        VALUES (:did, 'reset_energy', :payload)
-    """), {"did": device_id, "payload": body.model_dump_json(exclude_none=True)})
-    await db.commit()
-    return {"ok": True}
+    return await _queue_device_command(
+        db,
+        device_id,
+        "reset_energy",
+        body.model_dump_json(exclude_none=True),
+    )
 
 
 @router.post("/command/{device_id}/reset_power")
@@ -640,12 +682,12 @@ async def cmd_reset_power(
     _: None = Depends(verify_api_key),
 ):
     """Compatibility alias for reset_energy."""
-    await db.execute(text("""
-        INSERT INTO commands (device_id, command, payload)
-        VALUES (:did, 'reset_power', :payload)
-    """), {"did": device_id, "payload": body.model_dump_json(exclude_none=True)})
-    await db.commit()
-    return {"ok": True}
+    return await _queue_device_command(
+        db,
+        device_id,
+        "reset_power",
+        body.model_dump_json(exclude_none=True),
+    )
 
 
 @router.post("/command/{device_id}/clear_maintenance")
@@ -656,12 +698,12 @@ async def cmd_clear_maintenance(
     _: None = Depends(verify_api_key),
 ):
     """Queue a clear_maintenance command for the device."""
-    await db.execute(text("""
-        INSERT INTO commands (device_id, command, payload)
-        VALUES (:did, 'clear_maintenance', :payload)
-    """), {"did": device_id, "payload": body.model_dump_json(exclude_none=True)})
-    await db.commit()
-    return {"ok": True}
+    return await _queue_device_command(
+        db,
+        device_id,
+        "clear_maintenance",
+        body.model_dump_json(exclude_none=True),
+    )
 
 
 # ── GET /command/{device_id}/pending ─────────────────────────────────────────
@@ -673,10 +715,10 @@ async def cmd_get_pending(
 ):
     """Return the oldest pending command for this device (used by ESP32 poll)."""
     # Auto-expire commands older than 5 minutes
-    await db.execute(text("""
+    await db.execute(text(f"""
         UPDATE commands SET status='expired'
         WHERE device_id=:did AND status='pending'
-        AND created_at < NOW() - INTERVAL '5 minutes'
+        AND created_at < NOW() - INTERVAL '{_COMMAND_EXPIRY_INTERVAL}'
     """), {"did": device_id})
     await db.commit()
 
