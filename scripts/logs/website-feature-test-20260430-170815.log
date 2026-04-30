@@ -1,0 +1,42 @@
+[2026-04-30 17:08:15] Website feature smoke test started for http://localhost:8000
+[2026-04-30 17:08:15] Logs will be written to C:\Users\TUF\Desktop\Main project\AI ml backend\scripts\logs\website-feature-test-20260430-170815.log
+[2026-04-30 17:08:17] PASS  health: status=200
+[2026-04-30 17:08:17] SKIP  auth_login: Set TEST_AUTH_USERNAME and TEST_AUTH_PASSWORD to test login flows.
+[2026-04-30 17:08:17] SKIP  auth_verify: Login step was skipped or failed.
+[2026-04-30 17:08:17] SKIP  auth_me: Login step was skipped or failed.
+[2026-04-30 17:08:22] PASS  create_device: website-test-20260430113815
+[2026-04-30 17:08:26] PASS  list_devices: count=9
+[2026-04-30 17:08:29] PASS  get_device: Website Feature Test Device
+[2026-04-30 17:08:33] PASS  update_device: QA Bench
+[2026-04-30 17:08:36] PASS  device_heartbeat: Heartbeat recorded
+[2026-04-30 17:08:45] PASS  post_sensor_data: telemetry accepted
+[2026-04-30 17:08:48] PASS  get_sensor_data: rows=1
+[2026-04-30 17:08:51] PASS  forecast: stable
+[2026-04-30 17:08:54] PASS  predictions: rows=0
+[2026-04-30 17:08:58] PASS  local_ai: Successfully ran 0 local models.
+[2026-04-30 17:09:10] PASS  cloud_ai: AI analysis completed and stored
+[2026-04-30 17:09:13] PASS  latest_ai: latest AI endpoint reachable
+[2026-04-30 17:09:16] PASS  ai_mode: AI mode updated to 'commentary'
+[2026-04-30 17:09:18] PASS  fault_summary: active=1
+[2026-04-30 17:09:22] PASS  active_faults: active_faults=1
+[2026-04-30 17:09:25] PASS  device_faults: faults=1
+[2026-04-30 17:09:27] PASS  all_faults: faults=1
+[2026-04-30 17:09:31] PASS  fault_context: fault_id=2
+[2026-04-30 17:09:36] PASS  resolve_fault: fault_id=2
+[2026-04-30 17:09:40] PASS  create_manual_fault: fault_id=3
+[2026-04-30 17:09:44] PASS  delete_manual_fault: Fault deleted successfully
+[2026-04-30 17:09:48] PASS  command_set_protection: replaced=0
+[2026-04-30 17:09:52] PASS  command_pending: id=15
+[2026-04-30 17:10:00] PASS  command_done: id=15
+[2026-04-30 17:10:03] PASS  command_set_maintenance: replaced=0
+[2026-04-30 17:10:07] PASS  command_set_runtime: replaced=1
+[2026-04-30 17:10:11] PASS  command_reset_energy: replaced=0
+[2026-04-30 17:10:15] PASS  command_clear_maintenance: replaced=1
+[2026-04-30 17:10:18] PASS  command_ack_faults: replaced=0
+[2026-04-30 17:10:21] PASS  command_history: history=6
+[2026-04-30 17:10:27] PASS  cleanup_device: Device and all related data deleted successfully
+[2026-04-30 17:10:27] 
+[2026-04-30 17:10:27] Test summary
+[2026-04-30 17:10:27] Passed: 32
+[2026-04-30 17:10:27] Failed: 0
+[2026-04-30 17:10:27] Skipped: 3

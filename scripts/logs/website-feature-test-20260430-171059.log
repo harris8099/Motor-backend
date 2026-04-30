@@ -1,0 +1,222 @@
+[2026-04-30 17:10:59] Website feature smoke test started for http://localhost:8000
+[2026-04-30 17:10:59] Logs will be written to C:\Users\TUF\Desktop\Main project\AI ml backend\scripts\logs\website-feature-test-20260430-171059.log
+[2026-04-30 17:11:01] PASS  health: status=200
+[2026-04-30 17:11:04] PASS  auth_login: user=admin
+[2026-04-30 17:11:07] PASS  auth_verify: user=admin
+[2026-04-30 17:11:10] PASS  auth_me: user=admin
+[2026-04-30 17:11:12] FAIL  create_device: HTTP 401: {"detail":"Invalid API key"}
+[2026-04-30 17:11:12] Traceback (most recent call last):
+  File "C:\Users\TUF\Desktop\Main project\AI ml backend\scripts\test_website_features.py", line 65, in request
+    with urllib.request.urlopen(request, timeout=self.timeout) as response:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python312\Lib\urllib\request.py", line 215, in urlopen
+    return opener.open(url, data, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python312\Lib\urllib\request.py", line 521, in open
+    response = meth(req, response)
+               ^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python312\Lib\urllib\request.py", line 630, in http_response
+    response = self.parent.error(
+               ^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python312\Lib\urllib\request.py", line 559, in error
+    return self._call_chain(*args)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python312\Lib\urllib\request.py", line 492, in _call_chain
+    result = func(*args)
+             ^^^^^^^^^^^
+  File "C:\Program Files\Python312\Lib\urllib\request.py", line 639, in http_error_default
+    raise HTTPError(req.full_url, code, msg, hdrs, fp)
+urllib.error.HTTPError: HTTP Error 401: Unauthorized
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\TUF\Desktop\Main project\AI ml backend\scripts\test_website_features.py", line 128, in run_step
+    detail = func()
+             ^^^^^^
+  File "C:\Users\TUF\Desktop\Main project\AI ml backend\scripts\test_website_features.py", line 231, in test_create_device
+    _, payload, _ = self.client.request(
+                    ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\TUF\Desktop\Main project\AI ml backend\scripts\test_website_features.py", line 77, in request
+    raise RuntimeError(f"HTTP {exc.code}: {text}") from exc
+RuntimeError: HTTP 401: {"detail":"Invalid API key"}
+[2026-04-30 17:11:14] FAIL  list_devices: HTTP 401: {"detail":"Invalid API key"}
+[2026-04-30 17:11:14] Traceback (most recent call last):
+  File "C:\Users\TUF\Desktop\Main project\AI ml backend\scripts\test_website_features.py", line 65, in request
+    with urllib.request.urlopen(request, timeout=self.timeout) as response:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python312\Lib\urllib\request.py", line 215, in urlopen
+    return opener.open(url, data, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python312\Lib\urllib\request.py", line 521, in open
+    response = meth(req, response)
+               ^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python312\Lib\urllib\request.py", line 630, in http_response
+    response = self.parent.error(
+               ^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python312\Lib\urllib\request.py", line 559, in error
+    return self._call_chain(*args)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python312\Lib\urllib\request.py", line 492, in _call_chain
+    result = func(*args)
+             ^^^^^^^^^^^
+  File "C:\Program Files\Python312\Lib\urllib\request.py", line 639, in http_error_default
+    raise HTTPError(req.full_url, code, msg, hdrs, fp)
+urllib.error.HTTPError: HTTP Error 401: Unauthorized
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\TUF\Desktop\Main project\AI ml backend\scripts\test_website_features.py", line 128, in run_step
+    detail = func()
+             ^^^^^^
+  File "C:\Users\TUF\Desktop\Main project\AI ml backend\scripts\test_website_features.py", line 246, in test_list_devices
+    _, payload, _ = self.client.request("GET", "/devices", params={"include_inactive": "true"})
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\TUF\Desktop\Main project\AI ml backend\scripts\test_website_features.py", line 77, in request
+    raise RuntimeError(f"HTTP {exc.code}: {text}") from exc
+RuntimeError: HTTP 401: {"detail":"Invalid API key"}
+[2026-04-30 17:11:16] FAIL  get_device: HTTP 401: {"detail":"Invalid API key"}
+[2026-04-30 17:11:16] Traceback (most recent call last):
+  File "C:\Users\TUF\Desktop\Main project\AI ml backend\scripts\test_website_features.py", line 65, in request
+    with urllib.request.urlopen(request, timeout=self.timeout) as response:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python312\Lib\urllib\request.py", line 215, in urlopen
+    return opener.open(url, data, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python312\Lib\urllib\request.py", line 521, in open
+    response = meth(req, response)
+               ^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python312\Lib\urllib\request.py", line 630, in http_response
+    response = self.parent.error(
+               ^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python312\Lib\urllib\request.py", line 559, in error
+    return self._call_chain(*args)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python312\Lib\urllib\request.py", line 492, in _call_chain
+    result = func(*args)
+             ^^^^^^^^^^^
+  File "C:\Program Files\Python312\Lib\urllib\request.py", line 639, in http_error_default
+    raise HTTPError(req.full_url, code, msg, hdrs, fp)
+urllib.error.HTTPError: HTTP Error 401: Unauthorized
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\TUF\Desktop\Main project\AI ml backend\scripts\test_website_features.py", line 128, in run_step
+    detail = func()
+             ^^^^^^
+  File "C:\Users\TUF\Desktop\Main project\AI ml backend\scripts\test_website_features.py", line 252, in test_get_device
+    _, payload, _ = self.client.request("GET", f"/devices/{self.test_device_id}")
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\TUF\Desktop\Main project\AI ml backend\scripts\test_website_features.py", line 77, in request
+    raise RuntimeError(f"HTTP {exc.code}: {text}") from exc
+RuntimeError: HTTP 401: {"detail":"Invalid API key"}
+[2026-04-30 17:11:18] FAIL  update_device: HTTP 401: {"detail":"Invalid API key"}
+[2026-04-30 17:11:18] Traceback (most recent call last):
+  File "C:\Users\TUF\Desktop\Main project\AI ml backend\scripts\test_website_features.py", line 65, in request
+    with urllib.request.urlopen(request, timeout=self.timeout) as response:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python312\Lib\urllib\request.py", line 215, in urlopen
+    return opener.open(url, data, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python312\Lib\urllib\request.py", line 521, in open
+    response = meth(req, response)
+               ^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python312\Lib\urllib\request.py", line 630, in http_response
+    response = self.parent.error(
+               ^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python312\Lib\urllib\request.py", line 559, in error
+    return self._call_chain(*args)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python312\Lib\urllib\request.py", line 492, in _call_chain
+    result = func(*args)
+             ^^^^^^^^^^^
+  File "C:\Program Files\Python312\Lib\urllib\request.py", line 639, in http_error_default
+    raise HTTPError(req.full_url, code, msg, hdrs, fp)
+urllib.error.HTTPError: HTTP Error 401: Unauthorized
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\TUF\Desktop\Main project\AI ml backend\scripts\test_website_features.py", line 128, in run_step
+    detail = func()
+             ^^^^^^
+  File "C:\Users\TUF\Desktop\Main project\AI ml backend\scripts\test_website_features.py", line 258, in test_update_device
+    _, payload, _ = self.client.request(
+                    ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\TUF\Desktop\Main project\AI ml backend\scripts\test_website_features.py", line 77, in request
+    raise RuntimeError(f"HTTP {exc.code}: {text}") from exc
+RuntimeError: HTTP 401: {"detail":"Invalid API key"}
+[2026-04-30 17:11:21] FAIL  device_heartbeat: HTTP 401: {"detail":"Invalid API key"}
+[2026-04-30 17:11:21] Traceback (most recent call last):
+  File "C:\Users\TUF\Desktop\Main project\AI ml backend\scripts\test_website_features.py", line 65, in request
+    with urllib.request.urlopen(request, timeout=self.timeout) as response:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python312\Lib\urllib\request.py", line 215, in urlopen
+    return opener.open(url, data, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python312\Lib\urllib\request.py", line 521, in open
+    response = meth(req, response)
+               ^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python312\Lib\urllib\request.py", line 630, in http_response
+    response = self.parent.error(
+               ^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python312\Lib\urllib\request.py", line 559, in error
+    return self._call_chain(*args)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python312\Lib\urllib\request.py", line 492, in _call_chain
+    result = func(*args)
+             ^^^^^^^^^^^
+  File "C:\Program Files\Python312\Lib\urllib\request.py", line 639, in http_error_default
+    raise HTTPError(req.full_url, code, msg, hdrs, fp)
+urllib.error.HTTPError: HTTP Error 401: Unauthorized
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\TUF\Desktop\Main project\AI ml backend\scripts\test_website_features.py", line 128, in run_step
+    detail = func()
+             ^^^^^^
+  File "C:\Users\TUF\Desktop\Main project\AI ml backend\scripts\test_website_features.py", line 272, in test_device_heartbeat
+    _, payload, _ = self.client.request("POST", f"/devices/{self.test_device_id}/heartbeat")
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\TUF\Desktop\Main project\AI ml backend\scripts\test_website_features.py", line 77, in request
+    raise RuntimeError(f"HTTP {exc.code}: {text}") from exc
+RuntimeError: HTTP 401: {"detail":"Invalid API key"}
+[2026-04-30 17:11:23] FAIL  post_sensor_data: HTTP 401: {"detail":"Invalid API key"}
+[2026-04-30 17:11:23] Traceback (most recent call last):
+  File "C:\Users\TUF\Desktop\Main project\AI ml backend\scripts\test_website_features.py", line 65, in request
+    with urllib.request.urlopen(request, timeout=self.timeout) as response:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python312\Lib\urllib\request.py", line 215, in urlopen
+    return opener.open(url, data, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python312\Lib\urllib\request.py", line 521, in open
+    response = meth(req, response)
+               ^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python312\Lib\urllib\request.py", line 630, in http_response
+    response = self.parent.error(
+               ^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python312\Lib\urllib\request.py", line 559, in error
+    return self._call_chain(*args)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python312\Lib\urllib\request.py", line 492, in _call_chain
+    result = func(*args)
+             ^^^^^^^^^^^
+  File "C:\Program Files\Python312\Lib\urllib\request.py", line 639, in http_error_default
+    raise HTTPError(req.full_url, code, msg, hdrs, fp)
+urllib.error.HTTPError: HTTP Error 401: Unauthorized
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\TUF\Desktop\Main project\AI ml backend\scripts\test_website_features.py", line 128, in run_step
+    detail = func()
+             ^^^^^^
+  File "C:\Users\TUF\Desktop\Main project\AI ml backend\scripts\test_website_features.py", line 276, in test_post_sensor_data
+    _, payload, _ = self.client.request("POST", "/data", json_body=self._sample_sensor_payload())
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\TUF\Desktop\Main project\AI ml backend\scripts\test_website_features.py", line 77, in request
+    raise RuntimeError(f"HTTP {exc.code}: {text}") from exc
+RuntimeError: HTTP 401: {"detail":"Invalid API key"}
