@@ -735,6 +735,44 @@ async def cmd_get_pending(
         }
 
 
+@router.get("/command/{device_id}/history")
+async def cmd_get_history(
+    device_id: str,
+    limit: int = 10,
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(verify_api_key),
+):
+    """Return recent commands for this device for debug/status UI."""
+    safe_limit = max(1, min(limit, 50))
+    result = await db.execute(text("""
+        SELECT id, command, payload, status, created_at, acked_at
+        FROM commands
+        WHERE device_id=:did
+        ORDER BY created_at DESC
+        LIMIT :limit
+    """), {"did": device_id, "limit": safe_limit})
+
+    rows = []
+    for row in result.mappings().all():
+        payload = row["payload"]
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except json.JSONDecodeError:
+                pass
+
+        rows.append({
+            "id": row["id"],
+            "command": row["command"],
+            "payload": payload,
+            "status": row["status"],
+            "created_at": row["created_at"],
+            "acked_at": row["acked_at"],
+        })
+
+    return {"commands": rows}
+
+
 # ── POST /command/{device_id}/done ────────────────────────────────────────────
 @router.post("/command/{device_id}/done")
 async def cmd_done(
