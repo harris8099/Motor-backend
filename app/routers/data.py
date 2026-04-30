@@ -582,6 +582,86 @@ async def cmd_set_protection(
     return {"ok": True}
 
 
+@router.post("/command/{device_id}/set_maintenance")
+async def cmd_set_maintenance(
+    device_id: str,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(verify_api_key),
+):
+    """Queue a set_maintenance command with maintenance and optional runtime values."""
+    await db.execute(text("""
+        INSERT INTO commands (device_id, command, payload)
+        VALUES (:did, 'set_maintenance', :payload)
+    """), {"did": device_id, "payload": json.dumps(body)})
+    await db.commit()
+    return {"ok": True}
+
+
+@router.post("/command/{device_id}/set_runtime")
+async def cmd_set_runtime(
+    device_id: str,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(verify_api_key),
+):
+    """Queue a set_runtime command with uptimeSeconds."""
+    await db.execute(text("""
+        INSERT INTO commands (device_id, command, payload)
+        VALUES (:did, 'set_runtime', :payload)
+    """), {"did": device_id, "payload": json.dumps(body)})
+    await db.commit()
+    return {"ok": True}
+
+
+@router.post("/command/{device_id}/reset_energy")
+async def cmd_reset_energy(
+    device_id: str,
+    body: dict = {},
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(verify_api_key),
+):
+    """Queue a reset_energy command for the device."""
+    await db.execute(text("""
+        INSERT INTO commands (device_id, command, payload)
+        VALUES (:did, 'reset_energy', :payload)
+    """), {"did": device_id, "payload": json.dumps(body)})
+    await db.commit()
+    return {"ok": True}
+
+
+@router.post("/command/{device_id}/reset_power")
+async def cmd_reset_power(
+    device_id: str,
+    body: dict = {},
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(verify_api_key),
+):
+    """Compatibility alias for reset_energy."""
+    await db.execute(text("""
+        INSERT INTO commands (device_id, command, payload)
+        VALUES (:did, 'reset_power', :payload)
+    """), {"did": device_id, "payload": json.dumps(body)})
+    await db.commit()
+    return {"ok": True}
+
+
+@router.post("/command/{device_id}/clear_maintenance")
+async def cmd_clear_maintenance(
+    device_id: str,
+    body: dict = {},
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(verify_api_key),
+):
+    """Queue a clear_maintenance command for the device."""
+    await db.execute(text("""
+        INSERT INTO commands (device_id, command, payload)
+        VALUES (:did, 'clear_maintenance', :payload)
+    """), {"did": device_id, "payload": json.dumps(body)})
+    await db.commit()
+    return {"ok": True}
+
+
 # ── GET /command/{device_id}/pending ─────────────────────────────────────────
 @router.get("/command/{device_id}/pending")
 async def cmd_get_pending(
@@ -608,7 +688,14 @@ async def cmd_get_pending(
     if not row:
         return {"command": None}
 
-    return {"id": row["id"], "command": row["command"], "payload": row["payload"]}
+    payload = row["payload"]
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except json.JSONDecodeError:
+            pass
+
+    return {"id": row["id"], "command": row["command"], "payload": payload}
 
 
 # ── POST /command/{device_id}/done ────────────────────────────────────────────
