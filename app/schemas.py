@@ -52,8 +52,8 @@ class ProtectionData(BaseModel):
     startupGraceMs: int
     faultTripCount: int
     vibrationAckGraceMs: int
-    tapThresholdMg: Optional[int] = None   # mg; 62–16000
-    tapDurationUs:  Optional[int] = None   # µs; 625–160000
+    tapThresholdMg: Optional[int] = None   # vibration threshold in mg; 62-15937
+    tapDurationUs:  Optional[int] = None   # vibration trip time backing field; 625-159375
 
 class MaintenanceData(BaseModel):
     nextMaintenanceTime: str
@@ -105,8 +105,8 @@ class SetProtectionCommand(BaseModel):
     startupGraceMs: Optional[int] = Field(None, ge=0, le=60000)
     faultTripCount: Optional[int] = Field(None, ge=0, le=1000)
     vibrationAckGraceMs: Optional[int] = Field(None, ge=0, le=60000)
-    tapThresholdMg: Optional[int] = Field(None, ge=62, le=16000)   # mirrors ESP32 limits
-    tapDurationUs:  Optional[int] = Field(None, ge=625, le=160000) # mirrors ESP32 limits
+    tapThresholdMg: Optional[int] = Field(None, ge=62, le=15937)   # mirrors ESP32 vibration threshold limits
+    tapDurationUs:  Optional[int] = Field(None, ge=625, le=159375) # mirrors ESP32 stored vibration trip-time field
 
     @model_validator(mode="after")
     def ensure_not_empty(self):

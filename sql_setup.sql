@@ -60,8 +60,8 @@ CREATE TABLE sensor_readings (
     prot_startup_grace INTEGER,
     prot_fault_trip_count INTEGER,
     prot_vibration_ack_grace INTEGER,
-    prot_tap_threshold_mg INTEGER,   -- ADXL345 tap threshold in milli-g
-    prot_tap_duration_us  INTEGER,   -- ADXL345 tap duration in micro-seconds
+    prot_tap_threshold_mg INTEGER,   -- vibration threshold in milli-g
+    prot_tap_duration_us  INTEGER,   -- stored vibration trip-time field (raw ESP value)
 
     -- Maintenance Data
     maint_next_time TEXT,
