@@ -202,6 +202,8 @@ def _row_to_payload(device_id: str, row) -> SensorPayload:
             startupGraceMs=row['prot_startup_grace'],
             faultTripCount=row['prot_fault_trip_count'],
             vibrationAckGraceMs=row['prot_vibration_ack_grace'],
+            tapThresholdMg=row.get('prot_tap_threshold_mg'),
+            tapDurationUs=row.get('prot_tap_duration_us'),
         ),
         maintenance=MaintenanceData(
             nextMaintenanceTime=row['maint_next_time'],
@@ -243,6 +245,7 @@ async def receive_data(
             prot_max_current, prot_max_temp, prot_min_rpm,
             prot_overvoltage, prot_undervoltage, prot_stall_current,
             prot_startup_grace, prot_fault_trip_count, prot_vibration_ack_grace,
+            prot_tap_threshold_mg, prot_tap_duration_us,
 
             maint_next_time, maint_total_hours, maint_hours_limit,
             maint_total_seconds, maint_limit_seconds
@@ -253,7 +256,7 @@ async def receive_data(
             :f_oc, :f_ot, :f_stall, :f_vib, :f_ov, :f_uv,
 
             :p_max_c, :p_max_t, :p_min_rpm, :p_ov, :p_uv, :p_stall_c,
-            :p_sg, :p_ftc, :p_vag,
+            :p_sg, :p_ftc, :p_vag, :p_tap_thresh, :p_tap_dur,
 
             :m_next, :m_th, :m_hl, :m_ts, :m_ls
         )
@@ -290,6 +293,8 @@ async def receive_data(
         "p_sg": payload.protection.startupGraceMs,
         "p_ftc": payload.protection.faultTripCount,
         "p_vag": payload.protection.vibrationAckGraceMs,
+        "p_tap_thresh": payload.protection.tapThresholdMg,
+        "p_tap_dur": payload.protection.tapDurationUs,
         "m_next": payload.maintenance.nextMaintenanceTime,
         "m_th": payload.maintenance.totalLifeCycleHours,
         "m_hl": payload.maintenance.maintenanceHoursLimit,
@@ -408,6 +413,8 @@ async def get_readings(
                prot_startup_grace AS prot_startup_grace_ms,
                prot_fault_trip_count,
                prot_vibration_ack_grace AS prot_vibration_ack_grace_ms,
+               prot_tap_threshold_mg,
+               prot_tap_duration_us,
                maint_next_time,
                maint_total_hours,
                maint_hours_limit,
@@ -866,7 +873,13 @@ async def export_readings_csv(
         "power": ["voltage", "current", "power", "power_factor", "energy", "frequency"],
         "temperature": ["temp1", "temp2"],
         "vibration": ["accel_x", "accel_y", "accel_z", "tap_detected"],
-        "faults": ["fault_overcurrent", "fault_overtemp", "fault_stall", "fault_vibration", "fault_overvoltage", "fault_undervoltage"]
+        "faults": ["fault_overcurrent", "fault_overtemp", "fault_stall", "fault_vibration", "fault_overvoltage", "fault_undervoltage"],
+        "protection": [
+            "prot_max_current", "prot_max_temp", "prot_min_rpm",
+            "prot_overvoltage", "prot_undervoltage", "prot_stall_current",
+            "prot_startup_grace", "prot_fault_trip_count", "prot_vibration_ack_grace",
+            "prot_tap_threshold_mg", "prot_tap_duration_us",
+        ],
     }
     
     selected_columns = ["ts"]

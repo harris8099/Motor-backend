@@ -34,7 +34,11 @@ url = url.split("?")[0]
 engine = create_async_engine(
     url,
     echo=False,
-    connect_args={"ssl": "require"}
+    connect_args={"ssl": "require"},
+    pool_pre_ping=True,     # test connection before use, discard stale ones
+    pool_recycle=300,       # recycle connections every 5 min (before DB idle timeout)
+    pool_size=5,
+    max_overflow=10,
 )
 
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)

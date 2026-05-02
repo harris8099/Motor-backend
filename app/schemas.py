@@ -52,6 +52,8 @@ class ProtectionData(BaseModel):
     startupGraceMs: int
     faultTripCount: int
     vibrationAckGraceMs: int
+    tapThresholdMg: Optional[int] = None   # mg; 62–16000
+    tapDurationUs:  Optional[int] = None   # µs; 625–160000
 
 class MaintenanceData(BaseModel):
     nextMaintenanceTime: str
@@ -103,6 +105,8 @@ class SetProtectionCommand(BaseModel):
     startupGraceMs: Optional[int] = Field(None, ge=0, le=60000)
     faultTripCount: Optional[int] = Field(None, ge=0, le=1000)
     vibrationAckGraceMs: Optional[int] = Field(None, ge=0, le=60000)
+    tapThresholdMg: Optional[int] = Field(None, ge=62, le=16000)   # mirrors ESP32 limits
+    tapDurationUs:  Optional[int] = Field(None, ge=625, le=160000) # mirrors ESP32 limits
 
     @model_validator(mode="after")
     def ensure_not_empty(self):
