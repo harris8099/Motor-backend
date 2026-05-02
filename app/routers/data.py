@@ -17,6 +17,7 @@ from app.services.ml_prediction import run_ml_predictions, ml_prediction_service
 from app.services.advanced_ml_prediction import run_advanced_ml_predictions, advanced_ml_prediction_service
 from app.routers.faults import detect_and_log_fault
 import json
+import httpx
 import numpy as np
 from pydantic import BaseModel, ValidationError
 
@@ -91,6 +92,17 @@ def sanitize_for_json(obj):
         return sanitize_for_json(obj.tolist())
     return obj
 
+async def _fetch_city_temp(lat: float, lon: float) -> float | None:
+    """Fetch current city temperature from Open-Meteo (no API key needed)."""
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            r = await client.get(
+                "https://api.open-meteo.com/v1/forecast",
+                params={"latitude": lat, "longitude": lon, "current": "temperature_2m"}
+            )
+            return r.json()["current"]["temperature_2m"]
+    except Exception:
+        return None
 
 router = APIRouter()
 
@@ -255,7 +267,7 @@ async def receive_data(
         "energy": payload.power.energy,
         "frequency": payload.power.frequency,
         "temp1": payload.temperature.t1,
-        "temp2": payload.temperature.t2,
+        "temp2": await _fetch_city_temp(24.58, 73.68) if payload.temperature.t2 == 0 else payload.temperature.t2,
         "accel_x": payload.vibration.x,
         "accel_y": payload.vibration.y,
         "accel_z": payload.vibration.z,

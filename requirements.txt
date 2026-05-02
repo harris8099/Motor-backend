@@ -14,3 +14,4 @@ groq
 bcrypt
 python-jose[cryptography]
 python-multipart
+httpx
