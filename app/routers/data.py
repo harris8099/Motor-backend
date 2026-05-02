@@ -292,6 +292,8 @@ async def receive_data(
             is_active = TRUE
     """), {"device_id": payload.deviceId})
 
+    await db.commit()
+
     # Get the ID of the inserted reading for fault logging reference
     reading_result = await db.execute(text("""
         SELECT id FROM sensor_readings
