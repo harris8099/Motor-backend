@@ -1,5 +1,8 @@
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Header, Body
+from fastapi.responses import StreamingResponse
+import io
+import csv
 
 # India timezone (IST = UTC+5:30)
 INDIA_TZ = timezone(timedelta(hours=5, minutes=30))
@@ -844,3 +847,80 @@ async def cmd_done(
     """), {"id": body["id"], "did": device_id})
     await db.commit()
     return {"ok": True}
+
+
+# ── GET /data/{device_id}/export ─────────────────────────────────────────────
+@router.get("/data/{device_id}/export")
+async def export_readings_csv(
+    device_id: str,
+    categories: str = None,
+    start_date: str = None,
+    end_date: str = None,
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(verify_api_key),
+):
+    """Export sensor readings as a CSV file."""
+    
+    CATEGORY_MAP = {
+        "motor": ["motor_running", "rpm", "pulse", "uptime_seconds"],
+        "power": ["voltage", "current", "power", "power_factor", "energy", "frequency"],
+        "temperature": ["temp1", "temp2"],
+        "vibration": ["accel_x", "accel_y", "accel_z", "tap_detected"],
+        "faults": ["fault_overcurrent", "fault_overtemp", "fault_stall", "fault_vibration", "fault_overvoltage", "fault_undervoltage"]
+    }
+    
+    selected_columns = ["ts"]
+    
+    if categories:
+        cats = [c.strip().lower() for c in categories.split(",")]
+        for cat in cats:
+            if cat in CATEGORY_MAP:
+                selected_columns.extend(CATEGORY_MAP[cat])
+    
+    if len(selected_columns) == 1:
+        for cols in CATEGORY_MAP.values():
+            selected_columns.extend(cols)
+            
+    columns_sql = ", ".join(selected_columns)
+
+    count_query = "SELECT COUNT(*) FROM sensor_readings WHERE device_id = :device_id"
+    query = f"SELECT {columns_sql} FROM sensor_readings WHERE device_id = :device_id"
+    params = {"device_id": device_id}
+    
+    if start_date:
+        query += " AND ts >= :start_date"
+        count_query += " AND ts >= :start_date"
+        params["start_date"] = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
+    if end_date:
+        query += " AND ts <= :end_date"
+        count_query += " AND ts <= :end_date"
+        params["end_date"] = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
+        
+    query += " ORDER BY ts ASC"
+
+    count_result = await db.execute(text(count_query), params)
+    if count_result.scalar() == 0:
+        raise HTTPException(status_code=404, detail="No data found for the selected date range")
+
+    async def iter_csv():
+        buffer = io.StringIO()
+        writer = csv.writer(buffer)
+        
+        result = await db.execute(text(query), params)
+        rows = result.mappings().all()
+            
+        writer.writerow(rows[0].keys())
+        yield buffer.getvalue()
+        buffer.seek(0)
+        buffer.truncate(0)
+        
+        for row in rows:
+            writer.writerow(row.values())
+            yield buffer.getvalue()
+            buffer.seek(0)
+            buffer.truncate(0)
+            
+    headers = {
+        "Content-Disposition": f"attachment; filename=sensor_data_{device_id}.csv"
+    }
+    return StreamingResponse(iter_csv(), media_type="text/csv", headers=headers)

@@ -131,7 +131,7 @@ class MLPredictionService:
                     data['voltage'] or 0,
                     data['rpm'] or 0,
                     data['temp1'] or 0,
-                    data['temp2'] or 0,
+                    data['temp2'] or 0, # city/ambient temp - no change to value, just awareness
                     (data['accel_x'] or 0) ** 2 + (data['accel_y'] or 0) ** 2 + (data['accel_z'] or 0) ** 2,  # Vibration magnitude squared
                     data['energy'] or 0,
                     data['uptime_seconds'] or 0,
@@ -225,6 +225,11 @@ class MLPredictionService:
                 time_to_threshold = np.argmax(future_temps > max_temp_threshold) * 5  # minutes
                 confidence = min((max_predicted_temp - max_temp_threshold) / 20, 1.0)
                 
+                # Boost confidence if ambient (city) temp is also high
+                ambient_temp = current_features[0, 5]  # temp2 = city temp
+                if ambient_temp > 0 and ambient_temp > 30:
+                    confidence = min(confidence + 0.1, 1.0)
+
                 return {
                     "type": "overheating_prediction",
                     "confidence": confidence,
@@ -509,7 +514,8 @@ class MLPredictionService:
                 "current_status": {
                     "rpm": payload.motor.rpm,
                     "power": payload.power.power,
-                    "temperature": (payload.temperature.t1 + payload.temperature.t2) / 2,
+                    "motor_temp": payload.temperature.t1,
+                    "ambient_temp": payload.temperature.t2,
                     "current": payload.power.current
                 },
                 "ml_predictions": [
@@ -565,15 +571,28 @@ class MLPredictionService:
         results = []
         
         # Basic threshold-based predictions
-        avg_temp = (payload.temperature.t1 + payload.temperature.t2) / 2
-        if avg_temp > payload.protection.maxTempC:
+        # avg_temp = (payload.temperature.t1 + payload.temperature.t2) / 2
+        # if avg_temp > payload.protection.maxTempC:
+        #     results.append({
+        #         "type": "overheating_basic",
+        #         "confidence": 0.7,
+        #         "severity": "medium",
+        #         "details": {"avg_temp": avg_temp, "threshold": payload.protection.maxTempC}
+        #     })
+        
+        motor_temp = payload.temperature.t1
+        ambient_temp = payload.temperature.t2
+        if motor_temp > payload.protection.maxTempC:
+            confidence = 0.7
+            if ambient_temp > 0 and ambient_temp > 30:
+                confidence = min(confidence + 0.1, 1.0)
             results.append({
                 "type": "overheating_basic",
-                "confidence": 0.7,
+                "confidence": confidence,
                 "severity": "medium",
-                "details": {"avg_temp": avg_temp, "threshold": payload.protection.maxTempC}
+                "details": {"motor_temp": motor_temp, "ambient_temp": ambient_temp, "threshold": payload.protection.maxTempC}
             })
-        
+
         if payload.power.current > payload.protection.stallCurrentA and payload.motor.rpm < payload.protection.minRpm:
             results.append({
                 "type": "stall_risk_basic",

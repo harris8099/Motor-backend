@@ -181,9 +181,12 @@ class AdvancedMLPredictionService:
             crest_factor_z = np.max(np.sqrt(vibration_z)) / rms_z if rms_z > 0 else 0
             
             # 3. Kurtosis - Peakiness of distribution
-            kurtosis_x = stats.kurtosis(np.sqrt(vibration_x))
-            kurtosis_y = stats.kurtosis(np.sqrt(vibration_y))
-            kurtosis_z = stats.kurtosis(np.sqrt(vibration_z))
+            def safe_kurtosis(arr):
+                return float(stats.kurtosis(arr)) if np.std(arr) > 1e-6 else 0.0
+                
+            kurtosis_x = safe_kurtosis(np.sqrt(vibration_x))
+            kurtosis_y = safe_kurtosis(np.sqrt(vibration_y))
+            kurtosis_z = safe_kurtosis(np.sqrt(vibration_z))
             
             # 4. Frequency Domain Analysis (FFT)
             current_vibration = current_features[0, 6:9]
@@ -304,8 +307,9 @@ class AdvancedMLPredictionService:
             
             # Statistical Z-score method with guard against zero std
             stds = np.std(features, axis=0)
+            safe_stds = np.where(stds > 1e-9, stds, 1.0)
             # Avoid division by zero - if std is near zero, z-score is 0 (no deviation)
-            z_scores = np.abs(np.where(stds > 1e-9, (current_features[0] - np.mean(features, axis=0)) / stds, 0.0))
+            z_scores = np.abs(np.where(stds > 1e-9, (current_features[0] - np.mean(features, axis=0)) / safe_stds, 0.0))
             max_z_score = np.max(z_scores)
             anomaly_scores['z_score'] = -max_z_score  # Negative for consistency
             
@@ -440,7 +444,8 @@ class AdvancedMLPredictionService:
             
             # Predict current state
             current_X = current_features[0, [0, 1, 3, 4, 6]].reshape(1, -1)
-            stall_probability = rf_model.predict_proba(current_X)[0, 1]
+            proba = rf_model.predict_proba(current_X)
+            stall_probability = proba[0, 1] if proba.shape[1] > 1 else 0.0
             
             # Feature importance
             feature_names = ['power', 'current', 'rpm', 'temperature', 'vibration']
@@ -766,8 +771,11 @@ class AdvancedMLPredictionService:
         alerts = ", ".join(f"{p['type']}(conf={round(p['confidence'],2)},{p['severity']})" for p in ml_predictions[:5]) or "none"
 
         prompt = (
+            # f"Motor: rpm={payload.motor.rpm} power={payload.power.power}W "
+            # f"temp={avg_temp}C current={payload.power.current}A uptime={payload.uptime}h\n"
             f"Motor: rpm={payload.motor.rpm} power={payload.power.power}W "
-            f"temp={avg_temp}C current={payload.power.current}A uptime={payload.uptime}h\n"
+            f"motor_temp={payload.temperature.t1}C ambient_temp={payload.temperature.t2}C "
+            f"current={payload.power.current}A uptime={payload.uptime}h\n"
             f"ML alerts: {alerts}\n"
             f"In 2-3 sentences, give an expert maintenance engineer comment on these ML alerts. "
             f"Focus on key concern and recommended priority. Be concise."

@@ -1,4 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi.responses import StreamingResponse
+import io
+import csv
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from app.database import get_db, settings
@@ -578,3 +581,64 @@ def _compute_diagnosis(fault_type: str, snapshot: dict) -> dict:
         diagnosis["recommended_actions"] = ["Review fault logs manually"]
     
     return diagnosis
+
+
+# ── GET /faults/{device_id}/export ───────────────────────────────────────────
+@router.get("/faults/{device_id}/export")
+async def export_faults_csv(
+    device_id: str,
+    start_date: str = None,
+    end_date: str = None,
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(verify_api_key),
+):
+    """Export fault logs as a CSV file."""
+    count_query = "SELECT COUNT(*) FROM fault_logs f WHERE f.device_id = :device_id"
+    query = """
+        SELECT 
+            f.id, f.device_id, f.fault_type, f.severity,
+            f.status, f.message, f.detected_at, f.resolved_at, f.resolved_by,
+            f.root_cause, f.actions_taken, f.parts_replaced, f.resolution_notes,
+            f.sensor_reading_id
+        FROM fault_logs f
+        WHERE f.device_id = :device_id
+    """
+    params = {"device_id": device_id}
+    
+    if start_date:
+        query += " AND f.detected_at >= :start_date"
+        count_query += " AND f.detected_at >= :start_date"
+        params["start_date"] = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
+    if end_date:
+        query += " AND f.detected_at <= :end_date"
+        count_query += " AND f.detected_at <= :end_date"
+        params["end_date"] = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
+        
+    query += " ORDER BY f.detected_at ASC"
+
+    count_result = await db.execute(text(count_query), params)
+    if count_result.scalar() == 0:
+        raise HTTPException(status_code=404, detail="No fault logs found for the selected date range")
+
+    async def iter_csv():
+        buffer = io.StringIO()
+        writer = csv.writer(buffer)
+        
+        result = await db.execute(text(query), params)
+        rows = result.mappings().all()
+            
+        writer.writerow(rows[0].keys())
+        yield buffer.getvalue()
+        buffer.seek(0)
+        buffer.truncate(0)
+        
+        for row in rows:
+            writer.writerow(row.values())
+            yield buffer.getvalue()
+            buffer.seek(0)
+            buffer.truncate(0)
+            
+    headers = {
+        "Content-Disposition": f"attachment; filename=fault_logs_{device_id}.csv"
+    }
+    return StreamingResponse(iter_csv(), media_type="text/csv", headers=headers)
