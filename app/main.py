@@ -107,6 +107,9 @@ async def ensure_schema_columns():
             CREATE INDEX IF NOT EXISTS idx_commands_device_pending
             ON commands(device_id, status, created_at)
         """))
+    # Drop any pooled asyncpg connections prepared before/while the schema changed.
+    # Fresh requests will reconnect with up-to-date statement plans.
+    await engine.dispose()
 
 @app.get("/health")
 async def health():
