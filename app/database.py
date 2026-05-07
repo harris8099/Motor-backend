@@ -34,7 +34,11 @@ url = url.split("?")[0]
 engine = create_async_engine(
     url,
     echo=False,
-    connect_args={"ssl": "require"},
+    connect_args={
+        "ssl": "require",
+        "prepared_statement_cache_size": 0,
+        "statement_cache_size": 0,
+    },
     pool_pre_ping=True,     # test connection before use, discard stale ones
     pool_recycle=300,       # recycle connections every 5 min (before DB idle timeout)
     pool_size=5,
