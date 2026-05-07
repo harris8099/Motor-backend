@@ -28,6 +28,9 @@ API_KEY=your_shared_api_key
 GEMINI_API_KEY=
 GEMINI_MODE=commentary
 PREDICTION_MODE=advanced
+PREDICTION_DISPATCH_MODE=auto
+REDIS_URL=
+PREDICTION_QUEUE_NAME=prediction_jobs
 ```
 
 ### Environment Variables
@@ -42,6 +45,12 @@ PREDICTION_MODE=advanced
   `commentary`, `prediction`, or `disabled`
 - `PREDICTION_MODE`
   `basic`, `ml`, or `advanced`
+- `PREDICTION_DISPATCH_MODE`
+  `auto`, `background`, or `redis`. `auto` uses Redis when `REDIS_URL` is set, otherwise FastAPI background tasks.
+- `REDIS_URL`
+  Optional Redis connection string for out-of-process prediction workers
+- `PREDICTION_QUEUE_NAME`
+  Optional Redis list name used for queued prediction jobs
 
 ## Install
 
@@ -56,6 +65,12 @@ pip install -r requirements.txt
 
 ```powershell
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+Run the Redis worker when traffic grows:
+
+```powershell
+python -m app.worker
 ```
 
 Health check:
@@ -93,3 +108,4 @@ GET /health
 
 - CORS is currently open to all origins in `app/main.py`
 - Restrict `allow_origins` before deploying publicly
+- `POST /data` now dispatches prediction work through a queue abstraction. Without Redis it still uses FastAPI background tasks; with `REDIS_URL` configured it enqueues jobs for the worker process.

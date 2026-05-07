@@ -901,7 +901,8 @@ class AdvancedMLPredictionService:
                     data['uptime_seconds'] or 0,
                     1 if data['motor_running'] else 0
                 ]
-                features.append(feature_vector)
+                if np.all(np.isfinite(feature_vector)):
+                    features.append(feature_vector)
         
         return np.array(features) if features else np.array([])
     

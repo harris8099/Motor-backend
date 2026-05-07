@@ -8,16 +8,16 @@ import csv
 INDIA_TZ = timezone(timedelta(hours=5, minutes=30))
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
-from app.database import get_db, settings, AsyncSessionLocal
+from app.database import get_db, settings
 from app.schemas import (
     SensorPayload, FaultsData, MaintenanceData, MotorData,
     PowerData, ProtectionData, TemperatureData, VibrationData,
     AckFaultsCommand, SetProtectionCommand, SetMaintenanceCommand,
     SetRuntimeCommand, EmptyCommand,
 )
-from app.services.prediction import run_predictions
-from app.services.ml_prediction import run_ml_predictions, ml_prediction_service
+from app.services.ml_prediction import ml_prediction_service
 from app.services.advanced_ml_prediction import run_advanced_ml_predictions, advanced_ml_prediction_service
+from app.services.prediction_jobs import enqueue_prediction_job, process_prediction_payload
 from app.routers.faults import detect_and_log_fault, mark_fault_cleared_by_hardware
 import json
 import httpx
@@ -161,43 +161,7 @@ async def _store_predictions_for_payload(payload_data: dict) -> None:
     Run ML work after the ingest request finishes so device uploads stay fast.
     Uses a fresh DB session because request-scoped sessions are closed by then.
     """
-    payload = SensorPayload.model_validate(payload_data)
-
-    async with AsyncSessionLocal() as db:
-        try:
-            prediction_mode = getattr(settings, 'prediction_mode', 'advanced')
-            if prediction_mode == 'advanced':
-                predictions = await run_advanced_ml_predictions(payload, db)
-            elif prediction_mode == 'ml':
-                predictions = await run_ml_predictions(payload, db)
-            else:
-                predictions = run_predictions(payload)
-
-            for p in predictions:
-                confidence = convert_numpy_value(p["confidence"])
-                details_dict = _convert_dict_numpy_values(p["details"]) if p["details"] else {}
-
-                await db.execute(text("""
-                    INSERT INTO predictions (device_id, prediction_type, confidence, severity, details)
-                    VALUES (:device_id, :type, :confidence, :severity, :details)
-                """), {
-                    "device_id": payload.deviceId,
-                    "type": p["type"],
-                    "confidence": confidence,
-                    "severity": p["severity"],
-                    "details": json.dumps(details_dict, cls=NumpyEncoder),
-                })
-
-            await db.execute(text("""
-                DELETE FROM predictions
-                WHERE device_id = :device_id
-                  AND ts < NOW() - INTERVAL '7 days'
-            """), {"device_id": payload.deviceId})
-
-            await db.commit()
-        except Exception:
-            await db.rollback()
-            logger.exception("Background prediction pipeline failed for device %s", payload.deviceId)
+    await process_prediction_payload(payload_data)
 
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
@@ -401,7 +365,7 @@ async def receive_data(
     for fault_type in cleared_faults:
         await mark_fault_cleared_by_hardware(db, payload.deviceId, fault_type)
 
-    background_tasks.add_task(_store_predictions_for_payload, payload.model_dump())
+    await enqueue_prediction_job(payload.model_dump(), background_tasks)
 
     # ── Auto-cleanup: prevent unbounded table growth ──────────────────────────
     await db.execute(text("""

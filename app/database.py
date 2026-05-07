@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     groq_api_key: str = ""    # Groq API key (optional)
     gemini_mode: str = "commentary"  # Options: 'disabled', 'commentary', 'prediction'
     prediction_mode: str = "advanced"  # Options: 'basic', 'ml', 'advanced'
+    prediction_dispatch_mode: str = "auto"  # Options: 'auto', 'background', 'redis'
+    redis_url: str = ""
+    prediction_queue_name: str = "prediction_jobs"
+    prediction_worker_block_seconds: int = 5
     # Set to your Vercel URL in production, e.g. https://your-app.vercel.app
     frontend_url: str = "*"
     jwt_secret: str = "change-me-in-production"  # JWT secret for auth tokens
