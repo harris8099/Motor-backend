@@ -23,6 +23,7 @@ class FaultSeverity(str, Enum):
 
 class FaultStatus(str, Enum):
     ACTIVE = "active"
+    CLEARED_PENDING_CLOSE = "cleared_pending_close"
     RESOLVED = "resolved"
 
 class RootCause(str, Enum):
@@ -57,6 +58,7 @@ class FaultResponse(BaseModel):
     status: str
     message: Optional[str] = None
     detected_at: datetime
+    cleared_at: Optional[datetime] = None
     resolved_at: Optional[datetime] = None
     resolved_by: Optional[str] = None
     root_cause: Optional[str] = None
@@ -116,9 +118,10 @@ CREATE TABLE IF NOT EXISTS fault_logs (
     device_id VARCHAR(64) NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
     fault_type VARCHAR(32) NOT NULL,
     severity VARCHAR(16) NOT NULL CHECK (severity IN ('critical', 'warning', 'info')),
-    status VARCHAR(16) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'resolved')),
+    status VARCHAR(32) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'cleared_pending_close', 'resolved')),
     message TEXT,
     detected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    cleared_at TIMESTAMPTZ,
     resolved_at TIMESTAMPTZ,
     resolved_by VARCHAR(128),
     root_cause VARCHAR(32),
@@ -151,7 +154,7 @@ async def get_active_faults(
     result = await db.execute(text("""
         SELECT 
             f.id, f.device_id, d.name as device_name, f.fault_type, f.severity,
-            f.status, f.message, f.detected_at, f.resolved_at, f.resolved_by,
+            f.status, f.message, f.detected_at, f.cleared_at, f.resolved_at, f.resolved_by,
             f.root_cause, f.actions_taken, f.parts_replaced, f.resolution_notes,
             f.sensor_reading_id
         FROM fault_logs f
@@ -190,7 +193,7 @@ async def get_faults_summary(
 @router.get("/faults/device/{device_id}", response_model=List[FaultResponse])
 async def get_device_faults(
     device_id: str,
-    status: Optional[str] = None,  # 'active', 'resolved', or None for all
+    status: Optional[str] = None,  # 'active', 'cleared_pending_close', 'resolved', or None for all
     limit: int = 50,
     db: AsyncSession = Depends(get_db),
     _: None = Depends(verify_api_key)
@@ -199,7 +202,7 @@ async def get_device_faults(
     query = """
         SELECT 
             f.id, f.device_id, d.name as device_name, f.fault_type, f.severity,
-            f.status, f.message, f.detected_at, f.resolved_at, f.resolved_by,
+            f.status, f.message, f.detected_at, f.cleared_at, f.resolved_at, f.resolved_by,
             f.root_cause, f.actions_taken, f.parts_replaced, f.resolution_notes,
             f.sensor_reading_id
         FROM fault_logs f
@@ -209,6 +212,8 @@ async def get_device_faults(
     params = {"device_id": device_id, "limit": limit}
     
     if status:
+        if status not in {member.value for member in FaultStatus}:
+            raise HTTPException(status_code=400, detail=f"Unsupported status '{status}'")
         query += " AND f.status = :status"
         params["status"] = status
     
@@ -233,7 +238,7 @@ async def get_all_faults(
     query = """
         SELECT 
             f.id, f.device_id, d.name as device_name, f.fault_type, f.severity,
-            f.status, f.message, f.detected_at, f.resolved_at, f.resolved_by,
+            f.status, f.message, f.detected_at, f.cleared_at, f.resolved_at, f.resolved_by,
             f.root_cause, f.actions_taken, f.parts_replaced, f.resolution_notes,
             f.sensor_reading_id
         FROM fault_logs f
@@ -243,6 +248,8 @@ async def get_all_faults(
     params = {"limit": limit, "offset": offset}
     
     if status:
+        if status not in {member.value for member in FaultStatus}:
+            raise HTTPException(status_code=400, detail=f"Unsupported status '{status}'")
         query += " AND f.status = :status"
         params["status"] = status
     if severity:
@@ -301,7 +308,7 @@ async def resolve_fault(
     
     if not row:
         raise HTTPException(status_code=404, detail="Fault not found")
-    if row["status"] == "resolved":
+    if row["status"] == FaultStatus.RESOLVED.value:
         raise HTTPException(status_code=400, detail="Fault is already resolved")
     
     # Update the fault
@@ -357,7 +364,7 @@ async def _get_fault_by_id(db: AsyncSession, fault_id: int) -> dict:
     result = await db.execute(text("""
         SELECT 
             f.id, f.device_id, d.name as device_name, f.fault_type, f.severity,
-            f.status, f.message, f.detected_at, f.resolved_at, f.resolved_by,
+            f.status, f.message, f.detected_at, f.cleared_at, f.resolved_at, f.resolved_by,
             f.root_cause, f.actions_taken, f.parts_replaced, f.resolution_notes,
             f.sensor_reading_id
         FROM fault_logs f
@@ -413,6 +420,47 @@ async def detect_and_log_fault(
     fault_id = result.scalar()
     
     return await _get_fault_by_id(db, fault_id)
+
+
+async def mark_fault_cleared_by_hardware(
+    db: AsyncSession,
+    device_id: str,
+    fault_type: str,
+) -> Optional[dict]:
+    """
+    Move an active fault out of the active queue when the hardware clears it.
+    The log stays in history and still requires a person to complete the final resolution.
+    """
+    result = await db.execute(text("""
+        UPDATE fault_logs
+        SET
+            status = 'cleared_pending_close',
+            cleared_at = COALESCE(cleared_at, NOW()),
+            resolved_at = COALESCE(resolved_at, NOW()),
+            resolved_by = COALESCE(resolved_by, 'hardware'),
+            resolution_notes = CASE
+                WHEN resolution_notes IS NULL OR resolution_notes = '' THEN
+                    'Fault cleared by hardware/ESP32. Pending manual close from website.'
+                WHEN POSITION('Fault cleared by hardware/ESP32. Pending manual close from website.' IN resolution_notes) > 0 THEN
+                    resolution_notes
+                ELSE
+                    resolution_notes || E'\n\nFault cleared by hardware/ESP32. Pending manual close from website.'
+            END
+        WHERE id = (
+            SELECT id
+            FROM fault_logs
+            WHERE device_id = :device_id
+              AND fault_type = :fault_type
+              AND status = 'active'
+            ORDER BY detected_at DESC
+            LIMIT 1
+        )
+        RETURNING id
+    """), {"device_id": device_id, "fault_type": fault_type})
+    row = result.mappings().first()
+    if not row:
+        return None
+    return await _get_fault_by_id(db, row["id"])
 
 
 # ─────────────────────────────────────────────────────────────────────────────

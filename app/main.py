@@ -48,9 +48,10 @@ async def ensure_schema_columns():
                 device_id VARCHAR(64) NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
                 fault_type VARCHAR(32) NOT NULL,
                 severity VARCHAR(16) NOT NULL CHECK (severity IN ('critical', 'warning', 'info')),
-                status VARCHAR(16) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'resolved')),
+                status VARCHAR(32) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'cleared_pending_close', 'resolved')),
                 message TEXT,
                 detected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                cleared_at TIMESTAMPTZ,
                 resolved_at TIMESTAMPTZ,
                 resolved_by VARCHAR(128),
                 root_cause VARCHAR(32),
@@ -59,6 +60,19 @@ async def ensure_schema_columns():
                 resolution_notes TEXT,
                 sensor_reading_id INTEGER
             )
+        """))
+        await conn.execute(text("""
+            ALTER TABLE fault_logs
+            ADD COLUMN IF NOT EXISTS cleared_at TIMESTAMPTZ
+        """))
+        await conn.execute(text("""
+            ALTER TABLE fault_logs
+            DROP CONSTRAINT IF EXISTS fault_logs_status_check
+        """))
+        await conn.execute(text("""
+            ALTER TABLE fault_logs
+            ADD CONSTRAINT fault_logs_status_check
+            CHECK (status IN ('active', 'cleared_pending_close', 'resolved'))
         """))
         # Create indexes separately
         await conn.execute(text("""

@@ -18,7 +18,7 @@ from app.schemas import (
 from app.services.prediction import run_predictions
 from app.services.ml_prediction import run_ml_predictions, ml_prediction_service
 from app.services.advanced_ml_prediction import run_advanced_ml_predictions, advanced_ml_prediction_service
-from app.routers.faults import detect_and_log_fault
+from app.routers.faults import detect_and_log_fault, mark_fault_cleared_by_hardware
 import json
 import httpx
 import numpy as np
@@ -342,10 +342,17 @@ async def receive_data(
         for fault_name, is_active in current_faults.items()
         if is_active and not previous_faults.get(fault_name, False)
     ]
+    cleared_faults = [
+        fault_name
+        for fault_name, is_active in current_faults.items()
+        if not is_active and previous_faults.get(fault_name, False)
+    ]
 
     # Use the new detect_and_log_fault function for each activated fault
     for fault_type in activated_faults:
         await detect_and_log_fault(db, payload.deviceId, fault_type, reading_id)
+    for fault_type in cleared_faults:
+        await mark_fault_cleared_by_hardware(db, payload.deviceId, fault_type)
 
     # Run ML predictions
     prediction_mode = getattr(settings, 'prediction_mode', 'advanced')
