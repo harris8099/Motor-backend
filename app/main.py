@@ -67,6 +67,10 @@ async def ensure_schema_columns():
         """))
         await conn.execute(text("""
             ALTER TABLE fault_logs
+            ALTER COLUMN status TYPE VARCHAR(32)
+        """))
+        await conn.execute(text("""
+            ALTER TABLE fault_logs
             DROP CONSTRAINT IF EXISTS fault_logs_status_check
         """))
         await conn.execute(text("""
