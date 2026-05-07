@@ -48,6 +48,7 @@ DEFAULT_USERNAME = os.environ.get("TEST_AUTH_USERNAME", "")
 DEFAULT_PASSWORD = os.environ.get("TEST_AUTH_PASSWORD", "")
 DEFAULT_TIMEOUT_SECONDS = float(os.environ.get("TEST_TIMEOUT_SECONDS", "20"))
 DEFAULT_WARN_LATENCY_MS = int(os.environ.get("TEST_WARN_LATENCY_MS", "1200"))
+DEFAULT_PREDICTION_WAIT_SECONDS = float(os.environ.get("TEST_PREDICTION_WAIT_SECONDS", "12"))
 
 
 class SkipTest(Exception):
@@ -125,13 +126,23 @@ class ApiClient:
 
 
 class TestRunner:
-    def __init__(self, client, log_path, username="", password="", cleanup=True, warn_latency_ms=1200):
+    def __init__(
+        self,
+        client,
+        log_path,
+        username="",
+        password="",
+        cleanup=True,
+        warn_latency_ms=1200,
+        prediction_wait_seconds=12,
+    ):
         self.client = client
         self.log_path = log_path
         self.username = username
         self.password = password
         self.cleanup = cleanup
         self.warn_latency_ms = warn_latency_ms
+        self.prediction_wait_seconds = prediction_wait_seconds
         self.failures = []
         self.successes = []
         self.skips = []
@@ -370,11 +381,39 @@ class TestRunner:
         return payload["summary"].get("trend", "no-trend")
 
     def test_predictions(self):
-        _, payload, _, latency_ms = self.client.request("GET", f"/predictions/{self.test_device_id}", params={"limit": 10})
-        self.last_latency_ms = latency_ms
-        if "data" not in payload:
-            raise RuntimeError(f"Unexpected predictions response: {payload}")
-        return f"rows={len(payload['data'])}"
+        deadline = time.time() + self.prediction_wait_seconds
+        attempts = 0
+        last_payload = None
+        last_latency_ms = None
+
+        while True:
+            _, payload, _, latency_ms = self.client.request(
+                "GET",
+                f"/predictions/{self.test_device_id}",
+                params={"limit": 10},
+            )
+            attempts += 1
+            last_payload = payload
+            last_latency_ms = latency_ms
+
+            if "data" not in payload:
+                raise RuntimeError(f"Unexpected predictions response: {payload}")
+
+            rows = payload.get("data", [])
+            if rows:
+                self.last_latency_ms = latency_ms
+                return f"rows={len(rows)} attempts={attempts}"
+
+            if time.time() >= deadline:
+                break
+
+            time.sleep(1.0)
+
+        self.last_latency_ms = last_latency_ms
+        return (
+            f"rows=0 attempts={attempts} "
+            f"(prediction queue may still be warming; endpoint reachable)"
+        )
 
     def test_local_ai(self):
         _, payload, _, latency_ms = self.client.request("POST", f"/ai/local-analyze/{self.test_device_id}")
@@ -646,6 +685,13 @@ class TestRunner:
         if self.failures:
             self.log("Failing checks: " + ", ".join(self.failures))
             return 1
+        self.log("")
+        self.log("Suggested manual browser checklist before pushing to main")
+        self.log("1. Login and open Home. Confirm devices load, fault banner appears correctly, and refresh still works.")
+        self.log("2. Open a device Overview page. Confirm telemetry, charts, and predictions render after the new lazy-load transition.")
+        self.log("3. Open Faults and Settings. Confirm command actions still work and command status/history refreshes.")
+        self.log("4. Open AI page. Trigger local/cloud analysis once and confirm results still appear after the polling changes.")
+        self.log("5. Switch to another browser tab for 15-30 seconds, come back, and confirm live data resumes cleanly.")
         return 0
 
 
@@ -663,6 +709,12 @@ def build_parser():
         type=int,
         default=DEFAULT_WARN_LATENCY_MS,
         help="Warn when a request exceeds this many milliseconds",
+    )
+    parser.add_argument(
+        "--prediction-wait-seconds",
+        type=float,
+        default=DEFAULT_PREDICTION_WAIT_SECONDS,
+        help="How long to wait for queued prediction rows to appear before only warning",
     )
     parser.add_argument(
         "--keep-device",
@@ -685,6 +737,7 @@ def main():
         password=args.password,
         cleanup=not args.keep_device,
         warn_latency_ms=args.warn_latency_ms,
+        prediction_wait_seconds=args.prediction_wait_seconds,
     )
     exit_code = runner.run()
     print(f"\nDetailed log: {log_path}")
