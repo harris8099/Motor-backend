@@ -1,9 +1,15 @@
 import asyncio
 import random
 import json
+import sys
 from datetime import datetime, timedelta, timezone
-from sqlalchemy.ext.asyncio import AsyncSession
+from pathlib import Path
 from sqlalchemy import text
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 from app.database import AsyncSessionLocal, settings
 
 # Database connection settings
@@ -37,14 +43,14 @@ async def create_dummy_data():
             """), device)
         
         await db.commit()
-        print("✓ Devices ensured")
+        print("[OK] Devices ensured")
         
         # Clear existing dummy data to avoid duplicates
         await db.execute(text("DELETE FROM sensor_readings WHERE device_id LIKE 'esp32-%' OR device_id LIKE 'motor-%'"))
         await db.execute(text("DELETE FROM fault_events WHERE device_id LIKE 'esp32-%' OR device_id LIKE 'motor-%'"))
         await db.execute(text("DELETE FROM predictions WHERE device_id LIKE 'esp32-%' OR device_id LIKE 'motor-%'"))
         await db.commit()
-        print("✓ Cleared existing dummy data")
+        print("[OK] Cleared existing dummy data")
         
         # Generate sensor readings for the last 48 hours
         now = datetime.now(timezone.utc)
@@ -204,7 +210,7 @@ async def create_dummy_data():
             
             await db.commit()
         
-        print(f"✓ Generated {readings_per_device * len(devices)} sensor readings")
+        print(f"[OK] Generated {readings_per_device * len(devices)} sensor readings")
         
         # Generate ML predictions for each device
         prediction_types = [
@@ -212,6 +218,8 @@ async def create_dummy_data():
             "vibration_anomaly", "efficiency_drop", "maintenance_due"
         ]
         
+        total_predictions = 0
+
         for device in devices:
             device_id = device["id"]
             print(f"Generating predictions for {device_id}...")
@@ -299,8 +307,9 @@ async def create_dummy_data():
                 })
             
             await db.commit()
+            total_predictions += num_predictions
         
-        print(f"✓ Generated {num_predictions * len(devices)} ML predictions")
+        print(f"[OK] Generated {total_predictions} ML predictions")
         
         # Update device statistics
         stats = await db.execute(text("""
@@ -321,13 +330,13 @@ async def create_dummy_data():
                   f"{stat['running_readings']} running, avg RPM: {stat['avg_rpm']:.0f}, "
                   f"max temp: {stat['max_temp']:.1f}°C, faults: {stat['fault_count']}")
         
-        print("\n✅ Dummy data creation completed!")
-        print("📊 Database now contains:")
-        print(f"   • {len(devices)} active devices")
-        print(f"   • {readings_per_device * len(devices)} sensor readings")
-        print(f"   • {num_predictions * len(devices)} ML predictions")
-        print(f"   • Various fault events for testing")
-        print("\n🌐 You can now test the ML predictions on the website!")
+        print("\n[OK] Dummy data creation completed!")
+        print("Database now contains:")
+        print(f"   - {len(devices)} active devices")
+        print(f"   - {readings_per_device * len(devices)} sensor readings")
+        print(f"   - {total_predictions} ML predictions")
+        print("   - Various fault events for testing")
+        print("\nYou can now test the ML predictions on the website.")
 
 if __name__ == "__main__":
     asyncio.run(create_dummy_data())

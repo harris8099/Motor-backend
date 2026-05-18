@@ -8,7 +8,11 @@ import sys
 import random
 import json
 from datetime import datetime, timedelta, timezone
-sys.path.insert(0, "c:\\Users\\TUF\\Desktop\\Main project\\AI ml backend")
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
@@ -159,6 +163,8 @@ SAMPLE_DEVICES = [
     },
 ]
 
+SAMPLE_DEVICE_IDS = [device["id"] for device in SAMPLE_DEVICES]
+
 
 def generate_realistic_sensor_data(specs, timestamp, load_factor=0.85):
     """
@@ -281,7 +287,7 @@ def generate_realistic_sensor_data(specs, timestamp, load_factor=0.85):
 async def seed_devices():
     """Add realistic industrial motor devices with sensor data to the database."""
     async with AsyncSessionLocal() as db:
-        print("🌱 Seeding realistic industrial motor devices...")
+        print("Seeding realistic industrial motor devices...")
         print("=" * 60)
         
         # Track created devices
@@ -310,7 +316,7 @@ async def seed_devices():
             }
             
             if existing:
-                print(f"🔄 Updating device {device_id}...")
+                print(f"Updating device {device_id}...")
                 await db.execute(text("""
                     UPDATE devices SET
                         name = :name,
@@ -324,9 +330,9 @@ async def seed_devices():
                 """), device_data)
                 devices_updated += 1
             else:
-                print(f"✨ Creating device {device_id}...")
-                print(f"   📍 {device['location']}")
-                print(f"   ⚡ {specs['horsepower']}HP @ {specs['rated_rpm']} RPM, {specs['voltage']}V")
+                print(f"Creating device {device_id}...")
+                print(f"   Location: {device['location']}")
+                print(f"   Motor: {specs['horsepower']}HP @ {specs['rated_rpm']} RPM, {specs['voltage']}V")
                 await db.execute(text("""
                     INSERT INTO devices (id, name, description, location, is_active, 
                                         firmware_version, last_seen_at, created_at, updated_at)
@@ -336,9 +342,17 @@ async def seed_devices():
                 devices_created += 1
         
         await db.commit()
+
+        # Reset generated seed data so reruns remain deterministic and don't skip partial data.
+        id_params = {f"id_{index}": device_id for index, device_id in enumerate(SAMPLE_DEVICE_IDS)}
+        id_placeholders = ", ".join(f":id_{index}" for index in range(len(SAMPLE_DEVICE_IDS)))
+
+        await db.execute(text(f"DELETE FROM fault_events WHERE device_id IN ({id_placeholders})"), id_params)
+        await db.execute(text(f"DELETE FROM sensor_readings WHERE device_id IN ({id_placeholders})"), id_params)
+        await db.commit()
         
         # Generate realistic sensor readings for each device
-        print("\n📊 Generating realistic sensor data...")
+        print("\nGenerating realistic sensor data...")
         print("-" * 60)
         
         now = datetime.now(timezone.utc)
@@ -347,16 +361,6 @@ async def seed_devices():
         for device in SAMPLE_DEVICES:
             device_id = device["id"]
             specs = device["motor_specs"]
-
-            # Check if device already has sensor readings
-            result = await db.execute(
-                text("SELECT COUNT(*) as count FROM sensor_readings WHERE device_id = :id"),
-                {"id": device_id}
-            )
-            existing_count = result.mappings().first()["count"]
-            if existing_count > 0:
-                print(f"⚠️  {device_id}: Skipped, already has {existing_count} readings")
-                continue
 
             # Generate 100 readings per device (spanning last 24 hours)
             readings_count = 100
@@ -437,21 +441,21 @@ async def seed_devices():
             
             await db.commit()
             total_readings += readings_count
-            print(f"✓ {device_id}: {readings_count} readings generated")
+            print(f"[OK] {device_id}: {readings_count} readings generated")
         
         # Show summary
         print("\n" + "=" * 60)
-        print("✅ Seeding completed!")
+        print("[OK] Seeding completed!")
         print(f"   Devices created: {devices_created}")
         print(f"   Devices updated: {devices_updated}")
         print(f"   Total sensor readings: {total_readings}")
         print(f"   Data spans: Last 24 hours")
-        print("\n📋 Device Summary:")
+        print("\nDevice Summary:")
         print("-" * 60)
         
         for device in SAMPLE_DEVICES:
             specs = device["motor_specs"]
-            print(f"⚡ {device['id']}: {device['name']}")
+            print(f"- {device['id']}: {device['name']}")
             print(f"   {specs['horsepower']}HP | {specs['rated_rpm']} RPM | {specs['voltage']}V | {specs['current']}A")
             print(f"   Location: {device['location']}")
             print()

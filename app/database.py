@@ -1,10 +1,13 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
-from pydantic_settings import BaseSettings
-from urllib.parse import urlparse, urlencode, parse_qs, urlunparse
-import re
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from pathlib import Path
+
+ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=str(ENV_FILE), env_file_encoding="utf-8")
+
     database_url: str
     api_key: str
     gemini_api_key: str = ""  # Google Gemini AI API key (optional)
@@ -19,8 +22,6 @@ class Settings(BaseSettings):
     # Set to your Vercel URL in production, e.g. https://your-app.vercel.app
     frontend_url: str = "*"
     jwt_secret: str = "change-me-in-production"  # JWT secret for auth tokens
-    class Config:
-        env_file = ".env"
 
 settings = Settings()
 
