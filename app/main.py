@@ -4,7 +4,12 @@ from sqlalchemy import text
 from app.routers import data, faults, predictions, forecast, devices, auth
 from app.database import engine, Base, settings
 
-app = FastAPI(title="ESP32 Motor Monitor API")
+app = FastAPI(
+    title="ESP32 Motor Monitor API",
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+)
 
 # Configure CORS for frontend
 # In production, replace with your actual Vercel URL
@@ -32,9 +37,19 @@ async def ensure_schema_columns():
             CREATE TABLE IF NOT EXISTS users (
                 username VARCHAR(50) PRIMARY KEY,
                 hashed_password VARCHAR(255) NOT NULL,
+                role VARCHAR(20) NOT NULL DEFAULT 'admin',
                 is_active BOOLEAN DEFAULT TRUE,
                 created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
             )
+        """))
+        await conn.execute(text("""
+            ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS role VARCHAR(20) NOT NULL DEFAULT 'admin'
+        """))
+        await conn.execute(text("""
+            UPDATE users
+            SET role = 'admin'
+            WHERE role IS NULL OR role = ''
         """))
         # Add last_ai_analysis_at to devices if not exists
         await conn.execute(text("""

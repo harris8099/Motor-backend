@@ -5,6 +5,7 @@ import csv
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from app.database import get_db, settings
+from app.routers.auth import require_admin_user, User
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime
@@ -270,7 +271,8 @@ async def get_all_faults(
 async def create_fault(
     fault: FaultCreate,
     db: AsyncSession = Depends(get_db),
-    _: None = Depends(verify_api_key)
+    _: None = Depends(verify_api_key),
+    __: User = Depends(require_admin_user),
 ):
     """Manually create a fault log entry (for admin use)."""
     message = fault.message or FAULT_MESSAGES.get(fault.fault_type, f"Fault detected: {fault.fault_type}")
@@ -297,7 +299,8 @@ async def resolve_fault(
     fault_id: int,
     resolution: FaultResolve,
     db: AsyncSession = Depends(get_db),
-    _: None = Depends(verify_api_key)
+    _: None = Depends(verify_api_key),
+    __: User = Depends(require_admin_user),
 ):
     """Resolve a fault by filling out the resolution form."""
     # Check if fault exists and is active
@@ -339,7 +342,8 @@ async def resolve_fault(
 async def delete_fault(
     fault_id: int,
     db: AsyncSession = Depends(get_db),
-    _: None = Depends(verify_api_key)
+    _: None = Depends(verify_api_key),
+    __: User = Depends(require_admin_user),
 ):
     """Delete a fault log entry (admin only)."""
     result = await db.execute(text("""

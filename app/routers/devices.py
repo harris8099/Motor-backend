@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from app.database import get_db, settings
+from app.routers.auth import require_admin_user, User
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime
@@ -85,7 +86,8 @@ async def get_device(
 async def create_device(
     device: DeviceCreate,
     db: AsyncSession = Depends(get_db),
-    _: None = Depends(verify_api_key)
+    _: None = Depends(verify_api_key),
+    __: User = Depends(require_admin_user),
 ):
     """Register a new device (idempotent: reactivates if it already exists)"""
     # Check if device already exists (may have been auto-registered by ESP32 or soft-deleted)
@@ -136,7 +138,8 @@ async def create_device(
 async def create_devices_bulk(
     devices: List[DeviceCreate],
     db: AsyncSession = Depends(get_db),
-    _: None = Depends(verify_api_key)
+    _: None = Depends(verify_api_key),
+    __: User = Depends(require_admin_user),
 ):
     """Register multiple devices at once, reactivating existing ones."""
     saved_devices = []
@@ -189,7 +192,8 @@ async def update_device(
     device_id: str,
     device_update: DeviceUpdate,
     db: AsyncSession = Depends(get_db),
-    _: None = Depends(verify_api_key)
+    _: None = Depends(verify_api_key),
+    __: User = Depends(require_admin_user),
 ):
     """Update a device's information"""
     # Check if device exists
@@ -238,7 +242,8 @@ async def update_device(
 async def delete_device(
     device_id: str,
     db: AsyncSession = Depends(get_db),
-    _: None = Depends(verify_api_key)
+    _: None = Depends(verify_api_key),
+    __: User = Depends(require_admin_user),
 ):
     """Hard delete a device and all its related data from the database."""
     # Check device exists first

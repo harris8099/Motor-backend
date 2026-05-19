@@ -9,6 +9,7 @@ INDIA_TZ = timezone(timedelta(hours=5, minutes=30))
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from app.database import get_db, settings
+from app.routers.auth import require_admin_user, User
 from app.schemas import (
     SensorPayload, FaultsData, MaintenanceData, MotorData,
     PowerData, ProtectionData, TemperatureData, VibrationData,
@@ -441,6 +442,7 @@ async def analyze_with_ai(
     device_id: str,
     db: AsyncSession = Depends(get_db),
     _: None = Depends(verify_api_key),
+    __: User = Depends(require_admin_user),
 ):
     """On-demand Cloud AI analysis (Mistral → Gemini → Groq) with DB-backed cooldown."""
 
@@ -562,6 +564,7 @@ class AIModeRequest(BaseModel):
 async def set_ai_mode(
     body: AIModeRequest,
     _: None = Depends(verify_api_key),
+    __: User = Depends(require_admin_user),
 ):
     """Change the AI analysis mode at runtime without restarting the server."""
     if body.mode not in ('commentary', 'prediction', 'disabled'):
@@ -578,6 +581,7 @@ async def analyze_with_local_models(
     device_id: str,
     db: AsyncSession = Depends(get_db),
     _: None = Depends(verify_api_key),
+    __: User = Depends(require_admin_user),
 ):
     """On-demand trigger for local ML models (Isolation Forest, RUL, etc.)"""
     result = await db.execute(text("""
@@ -630,6 +634,7 @@ async def cmd_ack_faults(
     body: AckFaultsCommand = Body(default_factory=AckFaultsCommand),
     db: AsyncSession = Depends(get_db),
     _: None = Depends(verify_api_key),
+    __: User = Depends(require_admin_user),
 ):
     """Queue an ack_faults command for the device. body may contain {faults: ['overcurrent', ...]}."""
     return await _queue_device_command(
@@ -647,6 +652,7 @@ async def cmd_set_protection(
     body: SetProtectionCommand,
     db: AsyncSession = Depends(get_db),
     _: None = Depends(verify_api_key),
+    __: User = Depends(require_admin_user),
 ):
     """Queue a set_protection command with updated threshold values."""
     return await _queue_device_command(
@@ -663,6 +669,7 @@ async def cmd_set_maintenance(
     body: SetMaintenanceCommand,
     db: AsyncSession = Depends(get_db),
     _: None = Depends(verify_api_key),
+    __: User = Depends(require_admin_user),
 ):
     """Queue a set_maintenance command with maintenance and optional runtime values."""
     return await _queue_device_command(
@@ -679,6 +686,7 @@ async def cmd_set_runtime(
     body: SetRuntimeCommand,
     db: AsyncSession = Depends(get_db),
     _: None = Depends(verify_api_key),
+    __: User = Depends(require_admin_user),
 ):
     """Queue a set_runtime command with uptimeSeconds."""
     return await _queue_device_command(
@@ -695,6 +703,7 @@ async def cmd_reset_energy(
     body: EmptyCommand = Body(default_factory=EmptyCommand),
     db: AsyncSession = Depends(get_db),
     _: None = Depends(verify_api_key),
+    __: User = Depends(require_admin_user),
 ):
     """Queue a reset_energy command for the device."""
     return await _queue_device_command(
@@ -711,6 +720,7 @@ async def cmd_reset_power(
     body: EmptyCommand = Body(default_factory=EmptyCommand),
     db: AsyncSession = Depends(get_db),
     _: None = Depends(verify_api_key),
+    __: User = Depends(require_admin_user),
 ):
     """Compatibility alias for reset_energy."""
     return await _queue_device_command(
@@ -727,6 +737,7 @@ async def cmd_clear_maintenance(
     body: EmptyCommand = Body(default_factory=EmptyCommand),
     db: AsyncSession = Depends(get_db),
     _: None = Depends(verify_api_key),
+    __: User = Depends(require_admin_user),
 ):
     """Queue a clear_maintenance command for the device."""
     return await _queue_device_command(
