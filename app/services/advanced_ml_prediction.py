@@ -153,7 +153,7 @@ class AdvancedMLPredictionService:
                 return await self._get_ai_commentary(payload, recent_predictions)
                 
         except Exception as e:
-            self.last_ai_error = str(e)
+            self.last_ai_error = "AI analysis failed or is not configured."
             print(f"On-demand AI analysis failed: {e}")
             return None
     
