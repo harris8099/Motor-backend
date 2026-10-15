@@ -509,8 +509,7 @@ async def analyze_with_ai(
         await db.commit()
         return {"success": True, "analysis": ai_result, "message": "AI analysis completed and stored"}
     else:
-        ai_error = getattr(advanced_ml_prediction_service, 'last_ai_error', '') or 'AI analysis failed or is not configured.'
-        return {"success": False, "analysis": None, "message": ai_error}
+        return {"success": False, "analysis": None, "message": "AI analysis failed or is not configured."}
 
 
 # ── GET /ai/latest/{device_id} ───────────────────────────────────────────────
